@@ -1,20 +1,20 @@
-Vera is an effort undergoing incubation at The Apache Software Foundation
-(ASF), sponsored by the Apache Incubator PMC. Incubation is required of all
-newly accepted projects until a further review indicates that the
-infrastructure, communications, and decision-making process have stabilized in a
-manner consistent with other successful ASF projects. While incubation status is
-not necessarily a reflection of the completeness or stability of the code, it
-does indicate that the project has yet to be fully endorsed by the ASF.
+Vera is an effort undergoing incubation at Vera Cooperation. Incubation is a
+period during which the project's infrastructure, communications, and
+decision-making process are still being established; it is not necessarily a
+reflection of the completeness or stability of the code.
 
-Some of the incubating project's releases may not be fully compliant with ASF
-policy. For example, releases may have incomplete or un-reviewed licensing
-conditions. What follows is a list of issues the project is currently aware of
-(this list is likely to be incomplete):
+Vera is derived from the Apache Vera codebase and is distributed under the
+Apache License, Version 2.0. Copyright, attribution, and license notices for
+the upstream work are preserved in the LICENSE and NOTICE files distributed
+with this work.
 
- * The software grant and committer ICLAs are not yet complete.
+Some releases may not be fully compliant with every downstream policy. For
+example, releases may have incomplete or un-reviewed licensing conditions.
+What follows is a list of issues the project is currently aware of (this list
+is likely to be incomplete):
+
+ * Third-party dependency license review is ongoing.
 
 If you are planning to incorporate this work into your product/project, please
-be aware that you will need to conduct a thorough licensing review to determine
-the overall implications of including this work. For the current status of this
-project through the Apache Incubator, visit:
-https://incubator.apache.org/projects/vera.html
+be aware that you will need to conduct a thorough licensing review to
+determine the overall implications of including this work.

@@ -39,7 +39,7 @@
 ![Vera——你的工作，你的 Agent。](./.github/assets/vera-hero.zh-CN.png)
 
 > [!NOTE]
-> Vera (Incubating) 是一个正在 Apache 软件基金会（ASF）孵化的项目，由 Apache Incubator PMC 提供 sponsor。所有新接受的项目都必须经过孵化，直到进一步审查表明其基础设施、沟通方式和决策流程已经稳定到与其他成功的 ASF 项目一致的程度。孵化状态并不必然反映代码的完成度或稳定性，但它确实表明该项目尚未得到 ASF 的完全认可。项目当前已知的问题记录在 [DISCLAIMER-WIP](./DISCLAIMER-WIP)（以英文原文为准）。
+> Vera (Incubating) 是一个由 Vera Cooperation 孵化的项目。孵化期间，项目的基础设施、沟通方式和决策流程仍在建立，直到它们稳定到可以支撑常规协作。孵化状态并不必然反映代码的完成度或稳定性。项目当前已知的问题记录在 [DISCLAIMER-WIP](./DISCLAIMER-WIP)（以英文原文为准）。
 
 > [!IMPORTANT]
 > Vera 仍在活跃开发中。macOS Apple Silicon 桌面版是首个早期公开版本，数据格式、CLI 和实验能力仍可能变化。
@@ -88,11 +88,9 @@
 
 ### Release 与下载
 
-Vera 目前还没有发布过 Apache release。当前从本仓库或包管理器分发的一切内容，都是在进入孵化器之前或孵化期间产生的，不是 Apache 软件基金会的 release，也没有经过 Incubator PMC 审查和投票。
+Vera 由 Vera Cooperation 发布。当前从本仓库或包管理器分发的一切内容都处于活跃开发期，数据格式、CLI 和实验能力仍可能变化。
 
-在 Apache release 出现之后，官方 release 指的是由 ASF 发布、并经 podling PPMC 和 Incubator PMC 批准的源码 release。由该源码构建并通过其他渠道分发的包，例如包管理器中的包或 Desktop 安装程序，属于 convenience artifact，本身不是 release，并且只有在由获批源码 release 构建时才有效。候选契约、签名路径和验包步骤见 [`.github/ASF_SOURCE_RELEASE.md`](./.github/ASF_SOURCE_RELEASE.md)。
-
-在获批源码 release 出现之前，本 README 不推荐任何预构建下载，请按下文从源码构建并运行 Vera。Desktop 目前面向 Apple Silicon Mac（`arm64`）。暂不支持 Intel Mac 和 Linux。[Windows](docs/windows-support.md) 是未签名预览，不是正式支持的发布层级。
+Desktop 目前面向 Apple Silicon Mac（`arm64`）。暂不支持 Intel Mac 和 Linux。[Windows](docs/windows-support.md) 是未签名预览，不是正式支持的发布层级。请按下文从源码构建并运行 Vera。
 
 ### 环境要求
 
