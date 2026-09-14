@@ -1,0 +1,75 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* ============================================================================
+   Help modal
+   ----------------------------------------------------------------------------
+   Split out of chat-header.css (#546 PR2, relocate — zero visual change).
+   The keyboard-shortcut help content (`.vera-help-*`) previously lived
+   in chat-header.css. Astryx owns the surrounding dialog surface.       */
+
+.vera-help-body {
+  display: grid;
+  gap: var(--space-2-5);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  overflow-y: auto;
+}
+
+.vera-help-section h3 {
+  font: var(--vera-text-heading-5);
+  margin: 0 0 var(--space-1);
+  color: var(--foreground-secondary);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+}
+
+.vera-help-section dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-0-5) var(--space-3);
+  margin: 0;
+}
+
+.vera-help-section dl > div {
+  display: contents;
+}
+
+.vera-help-section dt {
+  font: var(--vera-text-supporting);
+  color: var(--foreground-secondary);
+}
+
+.vera-help-section dd {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: end;
+}
+
+.vera-help-section dd > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.vera-help-plus {
+  font: var(--vera-text-supporting);
+  color: var(--muted-foreground);
+}

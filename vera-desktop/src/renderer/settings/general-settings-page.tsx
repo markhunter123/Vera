@@ -1,0 +1,962 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { PersonalizationSettingsSection } from "./personalization-settings-section";
+import {
+  SettingsActions,
+  SettingsField,
+  SettingsPage,
+  SettingsRow,
+  SettingsSection,
+} from "./settings-section";
+import type {
+  AppSettings,
+  ChatDefaultPermissionMode,
+  ShellPreference,
+  NetworkProxySettings,
+  UpdateAppSettingsResult,
+} from '@vera/core/settings';
+import type { ThinkingLevel } from '@vera/core/model-thinking';
+import type { LlmConnection } from '@vera/core/llm-connections';
+import type { TestProxyInput } from "@vera/core/settings/network-settings";
+import { buildChatModelChoices } from "@vera/core/chat-model-choice";
+import {
+  Button,
+  FormLayout,
+  TextInput,
+  NumberInput,
+  ModelPicker,
+  PermissionModeSelect,
+  Selector,
+  Switch,
+  modelChoiceValue,
+  modelMenuGroups,
+  parseModelChoiceValue,
+  useMountedRef,
+  useToast,
+  useUiLocale,
+  Banner,
+} from "@vera/ui";
+import { ProviderBrandMark } from "./provider-brand-marks";
+import { PasswordInput } from "./password-input";
+import { getConversationCopy } from '@vera/ui';
+import { settingsActionErrorMessage } from "./settings-error-copy";
+import { useActionGuard, useKeyedActionGuard } from "./use-action-guard";
+import { useOptimisticSettingsDraft } from "./use-optimistic-settings-draft";
+import { getSettingsPreferencesCopy } from "../locales/settings-preferences-copy.js";
+import { settingsTestResultMessage } from "../locales/settings-test-result-copy.js";
+import { getShellCopy } from "../locales/shell-copy.js";
+import type { RuntimeHostSettingsConnectionsBridge } from './runtime-host-settings-bridge.js';
+import { getSettingsSharedCopy } from '../locales/settings-shared-copy.js';
+import {
+  useOptionalRuntimeHostSettingsTarget,
+  useRuntimeHostSettingsTarget,
+} from './runtime-host-settings-target.js';
+import type { SettingsResourceStatus } from './settings-resource-state.js';
+import { SettingsRowSkeleton } from './settings-skeleton.js';
+
+export function GeneralSettingsPage(props: {
+  settings: AppSettings;
+  connections: readonly LlmConnection[];
+  defaultSlug: string | null;
+  connectionsBridge: Pick<RuntimeHostSettingsConnectionsBridge, 'setDefaultModel'> | undefined;
+  runtimeHostAvailabilityStatus: 'loading' | 'ready' | 'unavailable' | 'error';
+  runtimeHostCatalogStatus: SettingsResourceStatus;
+  runtimeHostSettingsStatus: SettingsResourceStatus;
+  runtimeHostConnectionsStatus: SettingsResourceStatus;
+  runtimeHostErrorMessage?: string;
+  testNetworkProxy?(input: TestProxyInput): Promise<import('@vera/core/settings').SettingsTestResult>;
+  onUpdate(
+    patch: Parameters<typeof window.vera.settings.update>[0],
+  ): Promise<UpdateAppSettingsResult>;
+  onRefreshConnections(): Promise<void>;
+  onRetryRuntimeHost(): Promise<void>;
+}) {
+  const host = useOptionalRuntimeHostSettingsTarget();
+  const locale = useUiLocale();
+  const copy = getSettingsPreferencesCopy(locale).general;
+  const sections = getSettingsPreferencesCopy(locale).sections;
+  const sharedCopy = getSettingsSharedCopy(locale);
+  const toast = useToast();
+  const hostDiagnosticTarget = host ? { profileId: host.profileId } : undefined;
+  const runtimeHostSettingsAvailable =
+    props.runtimeHostSettingsStatus.hasSnapshot && props.testNetworkProxy !== undefined;
+  const runtimeHostConnectionsAvailable =
+    props.runtimeHostConnectionsStatus.hasSnapshot && props.connectionsBridge !== undefined;
+  const runtimeHostTargetVerified =
+    props.runtimeHostAvailabilityStatus === 'ready' &&
+    props.runtimeHostCatalogStatus.isVerified;
+  const runtimeHostSettingsInteractive =
+    runtimeHostSettingsAvailable &&
+    runtimeHostTargetVerified &&
+    props.runtimeHostSettingsStatus.isVerified;
+  const runtimeHostConnectionsInteractive =
+    runtimeHostConnectionsAvailable &&
+    runtimeHostTargetVerified &&
+    props.runtimeHostConnectionsStatus.isVerified;
+  const runtimeHostError =
+    props.runtimeHostCatalogStatus.phase === 'error' ||
+    props.runtimeHostSettingsStatus.phase === 'error' ||
+    props.runtimeHostConnectionsStatus.phase === 'error';
+  const runtimeHostLoading =
+    !runtimeHostError &&
+    props.runtimeHostAvailabilityStatus !== 'unavailable' &&
+    (props.runtimeHostAvailabilityStatus === 'loading' ||
+      !runtimeHostSettingsAvailable ||
+      !runtimeHostConnectionsAvailable ||
+      !props.runtimeHostCatalogStatus.isVerified ||
+      !props.runtimeHostSettingsStatus.isVerified ||
+      !props.runtimeHostConnectionsStatus.isVerified);
+  const showRuntimeHostContent =
+    props.runtimeHostAvailabilityStatus !== 'unavailable' &&
+    (props.runtimeHostAvailabilityStatus === 'loading' ||
+      props.runtimeHostAvailabilityStatus === 'ready' ||
+      runtimeHostSettingsAvailable ||
+      runtimeHostConnectionsAvailable);
+  const showRuntimeHostSettingsPlaceholder =
+    showRuntimeHostContent &&
+    !runtimeHostSettingsAvailable &&
+    (props.runtimeHostSettingsStatus.phase === 'idle' ||
+      props.runtimeHostSettingsStatus.phase === 'loading');
+  const showRuntimeHostConnectionsPlaceholder =
+    showRuntimeHostContent &&
+    !runtimeHostConnectionsAvailable &&
+    (props.runtimeHostConnectionsStatus.phase === 'idle' ||
+      props.runtimeHostConnectionsStatus.phase === 'loading');
+  const showRuntimeHostDefaults =
+    runtimeHostSettingsAvailable ||
+    runtimeHostConnectionsAvailable ||
+    showRuntimeHostSettingsPlaceholder ||
+    showRuntimeHostConnectionsPlaceholder;
+  return (
+    <SettingsPage>
+      {runtimeHostError ? (
+        <Banner
+          status="error"
+          title={sharedCopy.settingsLoadFailed}
+          description={props.runtimeHostErrorMessage}
+          endContent={(
+            <Button
+              variant="secondary"
+              size="sm"
+              label={sharedCopy.retry}
+              onClick={() => void props.onRetryRuntimeHost()}
+            />
+          )}
+        />
+      ) : props.runtimeHostAvailabilityStatus === 'unavailable' ? (
+        <Banner status="warning" title={sharedCopy.runtimeHostUnavailable} />
+      ) : null}
+      {runtimeHostLoading && !runtimeHostError ? (
+        <span className="vera-visually-hidden" role="status" aria-live="polite">
+          {sharedCopy.loading}
+        </span>
+      ) : null}
+      {/* Designer audit P2-13: identity fields (显示名称/界面语言/语气偏好)
+          moved here from the 外观 page — they configure who you are to the
+          app, not how the app looks. The component keeps its save flow. */}
+      <PersonalizationSettingsSection
+        settings={props.settings}
+        runtimeHostSettingsAvailable={runtimeHostSettingsAvailable}
+        runtimeHostSettingsInteractive={runtimeHostSettingsInteractive}
+        showRuntimeHostSettingsPlaceholder={showRuntimeHostSettingsPlaceholder}
+        onUpdate={props.onUpdate}
+      />
+      <SettingsSection
+        title={sections.privacy}
+        description={sections.privacyHelp}
+      >
+        {runtimeHostSettingsAvailable ? <SettingsRow
+          label={copy.incognito}
+          description={copy.incognitoHelp}
+          end={
+            <Switch
+              label={copy.enableIncognito}
+              isLabelHidden
+              value={props.settings.privacy.incognitoActive}
+              isDisabled={!runtimeHostSettingsInteractive}
+              changeAction={async (incognitoActive) => {
+                try {
+                  await props.onUpdate({ privacy: { incognitoActive } });
+                } catch (error: unknown) {
+                  toast.error(
+                    copy.incognitoFailed,
+                    settingsActionErrorMessage(error, locale),
+                    undefined,
+                    hostDiagnosticTarget,
+                  );
+                }
+              }}
+            />
+          }
+        /> : showRuntimeHostSettingsPlaceholder ? (
+          <SettingsRowSkeleton
+            label={copy.incognito}
+            description={copy.incognitoHelp}
+            width="2.5rem"
+          />
+        ) : null}
+        <SettingsRow
+          label={copy.notifications}
+          description={copy.notificationsHelp}
+          end={
+            <Switch
+              label={copy.notifications}
+              isLabelHidden
+              value={props.settings.notifications.runComplete}
+              changeAction={async (runComplete) => {
+                try {
+                  await props.onUpdate({ notifications: { runComplete } });
+                } catch (error: unknown) {
+                  toast.error(
+                    copy.notificationsFailed,
+                    settingsActionErrorMessage(error, locale),
+                  );
+                }
+              }}
+            />
+          }
+        />
+        {runtimeHostSettingsAvailable ? <SettingsRow
+          label={copy.workspaceInstructions}
+          description={copy.workspaceInstructionsHelp}
+          end={
+            <Switch
+              label={copy.workspaceInstructions}
+              isLabelHidden
+              value={props.settings.workspaceInstructions.enabled}
+              isDisabled={!runtimeHostSettingsInteractive}
+              changeAction={async (enabled) => {
+                try {
+                  await props.onUpdate({ workspaceInstructions: { enabled } });
+                } catch (error: unknown) {
+                  toast.error(
+                    copy.workspaceInstructionsFailed,
+                    settingsActionErrorMessage(error, locale),
+                    undefined,
+                    hostDiagnosticTarget,
+                  );
+                }
+              }}
+            />
+          }
+        /> : showRuntimeHostSettingsPlaceholder ? (
+          <SettingsRowSkeleton
+            label={copy.workspaceInstructions}
+            description={copy.workspaceInstructionsHelp}
+            width="2.5rem"
+          />
+        ) : null}
+        <SettingsRow
+          label={copy.workHub}
+          description={copy.workHubHelp}
+          end={
+            <Switch
+              label={copy.workHub}
+              isLabelHidden
+              value={props.settings.workHub.enabled}
+              changeAction={async (enabled) => {
+                try {
+                  await props.onUpdate({ workHub: { enabled } });
+                } catch (error: unknown) {
+                  toast.error(copy.workHubFailed, settingsActionErrorMessage(error, locale));
+                }
+              }}
+            />
+          }
+        />
+      </SettingsSection>
+      {showRuntimeHostDefaults ? (
+        <GeneralDefaultsCard
+          connections={props.connections}
+          defaultSlug={props.defaultSlug}
+          connectionsBridge={props.connectionsBridge}
+          connectionsAvailable={runtimeHostConnectionsAvailable}
+          connectionsInteractive={runtimeHostConnectionsInteractive}
+          showConnectionsPlaceholder={showRuntimeHostConnectionsPlaceholder}
+          settingsAvailable={runtimeHostSettingsAvailable}
+          settingsInteractive={runtimeHostSettingsInteractive}
+          showSettingsPlaceholder={showRuntimeHostSettingsPlaceholder}
+          onRefresh={props.onRefreshConnections}
+          permissionMode={props.settings.chatDefaults.permissionMode}
+          thinkingLevel={props.settings.chatDefaults.thinkingLevel}
+          onUpdate={props.onUpdate}
+        />
+      ) : null}
+      {runtimeHostSettingsAvailable ? (
+        <>
+          <ShellSettingsSection
+            settings={props.settings}
+            isInteractive={runtimeHostSettingsInteractive}
+            onUpdate={props.onUpdate}
+          />
+          <SettingsSection
+            title={sections.network}
+            description={sections.networkHelp}
+          >
+            <NetworkProxySection
+              settings={props.settings}
+              isInteractive={runtimeHostSettingsInteractive}
+              onUpdate={props.onUpdate}
+              testNetworkProxy={props.testNetworkProxy!}
+            />
+          </SettingsSection>
+        </>
+      ) : showRuntimeHostSettingsPlaceholder ? (
+        <>
+          <SettingsSection title={sections.shell} description={sections.shellHelp}>
+            <SettingsRowSkeleton
+              label={copy.shellPreference}
+              description={copy.shellPreferenceHelp}
+              width="6rem"
+            />
+          </SettingsSection>
+          <SettingsSection title={sections.network} description={sections.networkHelp}>
+            <SettingsRowSkeleton
+              label={copy.proxy}
+              description={copy.proxyHelp}
+              width="6rem"
+            />
+          </SettingsSection>
+        </>
+      ) : null}
+    </SettingsPage>
+  );
+}
+
+const DEFAULT_GIT_BASH_EXECUTABLE = "C:\\Program Files\\Git\\bin\\bash.exe";
+
+function ShellSettingsSection(props: {
+  settings: AppSettings;
+  isInteractive: boolean;
+  onUpdate(
+    patch: Parameters<typeof window.vera.settings.update>[0],
+  ): Promise<UpdateAppSettingsResult>;
+}) {
+  const host = useRuntimeHostSettingsTarget();
+  const locale = useUiLocale();
+  const copy = getSettingsPreferencesCopy(locale).general;
+  const sections = getSettingsPreferencesCopy(locale).sections;
+  const toast = useToast();
+  const mountedRef = useMountedRef();
+  const saveGuard = useActionGuard<"save-shell">();
+  const [preference, setPreference] = useState<ShellPreference>(
+    props.settings.shell.preference,
+  );
+  const [executable, setExecutable] = useState(props.settings.shell.executable);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setPreference(props.settings.shell.preference);
+    setExecutable(props.settings.shell.executable);
+  }, [props.settings.shell.executable, props.settings.shell.preference]);
+
+  const normalizedExecutable = executable.trim();
+  const dirty =
+    preference !== props.settings.shell.preference ||
+    normalizedExecutable !== props.settings.shell.executable;
+  const canSave =
+    dirty && !saving && (preference === "auto" || normalizedExecutable.length > 0);
+
+  async function save(): Promise<void> {
+    if (!props.isInteractive) return;
+    if (!saveGuard.begin("save-shell")) return;
+    setSaving(true);
+    try {
+      await props.onUpdate({
+        shell: { preference, executable: normalizedExecutable },
+      });
+    } catch (error) {
+      if (mountedRef.current) {
+        toast.error(
+          copy.saveShellFailed,
+          isRejectedShellPreference(error)
+            ? copy.shellExecutableRejected
+            : settingsActionErrorMessage(error, locale),
+          undefined,
+          { profileId: host.profileId },
+        );
+      }
+    } finally {
+      saveGuard.finish();
+      if (mountedRef.current) setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsSection title={sections.shell} description={sections.shellHelp}>
+      <SettingsRow
+        label={copy.shellPreference}
+        description={copy.shellPreferenceHelp}
+        end={
+          <Selector
+            label={copy.shellPreference}
+            isLabelHidden
+            value={preference}
+            options={[
+              { value: "auto", label: copy.shellAuto },
+              { value: "git_bash", label: copy.shellGitBash },
+            ]}
+            isDisabled={saving || !props.isInteractive}
+            onChange={(value) => {
+              const next = value as ShellPreference;
+              setPreference(next);
+              if (next === "git_bash" && executable.trim().length === 0) {
+                setExecutable(DEFAULT_GIT_BASH_EXECUTABLE);
+              }
+            }}
+          />
+        }
+      />
+      {preference === "git_bash" ? (
+        <SettingsField>
+          <TextInput
+            value={executable}
+            onChange={setExecutable}
+            label={copy.shellExecutable}
+            description={copy.shellExecutableHelp}
+            placeholder={DEFAULT_GIT_BASH_EXECUTABLE}
+            width="100%"
+            isDisabled={saving || !props.isInteractive}
+          />
+        </SettingsField>
+      ) : null}
+      <SettingsActions>
+        <Button
+          variant="primary"
+          isDisabled={!canSave || !props.isInteractive}
+          isLoading={saving}
+          onClick={() => void save()}
+          label={saving ? copy.savingShell : dirty ? copy.saveShell : copy.shellSaved}
+        />
+      </SettingsActions>
+    </SettingsSection>
+  );
+}
+
+function isRejectedShellPreference(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.includes("Runtime policy mutation is invalid for the current state")
+  );
+}
+
+/**
+ * PR-GENERAL-DEFAULTS-CONFIGURABLE-0 (WAWQAQ msg `d3ea9a33` 2026-06-26):
+ * the General page used to ship three read-only `<SettingRow>` lines
+ * (启动 / 新对话模式 / 默认模型) that read like settings but had no
+ * configurable backing — the static text was the entire UI. Drop the
+ * two without backing storage; replace the third with a real
+ * Astryx `<Selector>` that lets the user pick the default LLM model
+ * inline. The selection is grouped by connection, but the persisted
+ * default is the pair `{ slug, model }` via `connections.setDefaultModel`.
+ *
+ * PR-DEFAULT-PERMISSION-MODE-0: the composer's per-session boundary picker
+ * did not previously control what a *new* chat starts on. Added
+ * a second picker right below 默认模型, backed by
+ * `settings.chatDefaults.permissionMode` (persisted via the generic
+ * `settings.update` patch, unlike the model picker's dedicated
+ * `connections.setDefaultModel` IPC). Renders the shared Astryx-backed
+ * `PermissionModeSelect` so labels, hints, and markup can't drift from the
+ * composer picker.
+ */
+/** Sentinel for "no preference" — Selector needs a value, absence is not one. */
+const FOLLOW_MODEL_DEFAULT = "__follow_model__";
+const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function GeneralDefaultsCard(props: {
+  connections: readonly LlmConnection[];
+  defaultSlug: string | null;
+  connectionsBridge: Pick<RuntimeHostSettingsConnectionsBridge, 'setDefaultModel'> | undefined;
+  connectionsAvailable: boolean;
+  connectionsInteractive: boolean;
+  showConnectionsPlaceholder: boolean;
+  settingsAvailable: boolean;
+  settingsInteractive: boolean;
+  showSettingsPlaceholder: boolean;
+  onRefresh(): Promise<void>;
+  permissionMode: ChatDefaultPermissionMode;
+  thinkingLevel?: ThinkingLevel;
+  onUpdate(
+    patch: Parameters<typeof window.vera.settings.update>[0],
+  ): Promise<UpdateAppSettingsResult>;
+}) {
+  const host = useOptionalRuntimeHostSettingsTarget();
+  const locale = useUiLocale();
+  const copy = getSettingsPreferencesCopy(locale).general;
+  // Level names come from the composer's own map — one vocabulary for the
+  // levels, so the settings row and the in-chat menu can never disagree.
+  const conversationCopy = getConversationCopy(locale);
+  const sections = getSettingsPreferencesCopy(locale).sections;
+  const boundaryCopy = getShellCopy(locale).sessionSettingsActions;
+  const toast = useToast();
+  const mountedRef = useMountedRef();
+  const persistGuard = useKeyedActionGuard<
+    "default-model" | "permission-mode" | "thinking-level"
+  >();
+  const [saving, setSaving] = useState(false);
+  const [savingPermissionMode, setSavingPermissionMode] = useState(false);
+  const [savingThinkingLevel, setSavingThinkingLevel] = useState(false);
+
+  const modelChoices = useMemo(
+    () => buildChatModelChoices(props.connections),
+    [props.connections],
+  );
+  const modelGroups = useMemo(
+    () => modelMenuGroups(modelChoices, locale),
+    [locale, modelChoices],
+  );
+  const selectedValue = useMemo(() => {
+    if (!props.defaultSlug) return "";
+    const connection = props.connections.find(
+      (candidate) => candidate.slug === props.defaultSlug,
+    );
+    if (!connection?.defaultModel) return "";
+    const value = modelChoiceValue(connection.slug, connection.defaultModel);
+    return modelChoices.some(
+      (choice) =>
+        modelChoiceValue(choice.connectionSlug, choice.model) === value,
+    )
+      ? value
+      : "";
+  }, [modelChoices, props.connections, props.defaultSlug]);
+  async function persistDefault(nextValue: string) {
+    if (!props.connectionsBridge || !props.connectionsInteractive) return;
+    const releaseSave = persistGuard.begin("default-model");
+    if (!releaseSave) return;
+    setSaving(true);
+    try {
+      const parsed = parseModelChoiceValue(nextValue);
+      await props.connectionsBridge.setDefaultModel(
+        parsed
+          ? {
+              slug: parsed.llmConnectionSlug,
+              model: parsed.model,
+            }
+          : null,
+      );
+      if (!mountedRef.current) return;
+      await props.onRefresh();
+    } catch (error) {
+      if (mountedRef.current) {
+        toast.error(
+          copy.saveDefaultModelFailed,
+          settingsActionErrorMessage(error, locale),
+          undefined,
+          host ? { profileId: host.profileId } : undefined,
+        );
+      }
+    } finally {
+      releaseSave();
+      if (mountedRef.current) setSaving(false);
+    }
+  }
+
+  async function persistPermissionMode(nextMode: ChatDefaultPermissionMode) {
+    if (!props.settingsInteractive) return;
+    // Same re-entrancy guard as persistDefault above: the disabled trigger
+    // alone can't fully prevent overlapping saves (React disables it a tick
+    // after the click), and overlapping settings.update calls have no
+    // ordering guarantee.
+    const releaseSave = persistGuard.begin("permission-mode");
+    if (!releaseSave) return;
+    if (nextMode === "bypass" && props.permissionMode !== "bypass") {
+      let confirmed = false;
+      try {
+        confirmed = await toast.confirm({
+          title: boundaryCopy.bypassConfirmTitle,
+          description: boundaryCopy.bypassConfirmDescription,
+          confirmLabel: boundaryCopy.bypassConfirmLabel,
+          cancelLabel: boundaryCopy.bypassCancelLabel,
+          destructive: true,
+        });
+      } catch (error) {
+        releaseSave();
+        if (mountedRef.current) {
+          toast.error(
+            copy.saveDefaultPermissionFailed,
+            settingsActionErrorMessage(error, locale),
+          );
+        }
+        return;
+      }
+      if (!confirmed) {
+        releaseSave();
+        return;
+      }
+    }
+    setSavingPermissionMode(true);
+    try {
+      await props.onUpdate({ chatDefaults: { permissionMode: nextMode } });
+    } catch (error) {
+      if (mountedRef.current) {
+        toast.error(
+          copy.saveDefaultPermissionFailed,
+          settingsActionErrorMessage(error, locale),
+          undefined,
+          host ? { profileId: host.profileId } : undefined,
+        );
+      }
+    } finally {
+      releaseSave();
+      if (mountedRef.current) setSavingPermissionMode(false);
+    }
+  }
+
+  async function persistThinkingLevel(next: ThinkingLevel | undefined) {
+    if (!props.settingsInteractive) return;
+    const releaseSave = persistGuard.begin("thinking-level");
+    if (!releaseSave) return;
+    setSavingThinkingLevel(true);
+    try {
+      await props.onUpdate({ chatDefaults: { thinkingLevel: next } });
+    } catch (error) {
+      if (mountedRef.current) {
+        toast.error(
+          copy.saveDefaultThinkingFailed,
+          settingsActionErrorMessage(error, locale),
+          undefined,
+          host ? { profileId: host.profileId } : undefined,
+        );
+      }
+    } finally {
+      releaseSave();
+      if (mountedRef.current) setSavingThinkingLevel(false);
+    }
+  }
+
+  return (
+    <SettingsSection
+      title={sections.chatDefaults}
+      description={sections.chatDefaultsHelp}
+    >
+      {props.connectionsAvailable ? (
+        <SettingsRow
+          label={copy.defaultModel}
+          description={copy.defaultModelHelp}
+          end={
+            <ModelPicker
+              groups={modelGroups}
+              value={selectedValue}
+              leadingOption={{ value: "", label: copy.notSet }}
+              renderProviderMark={(type) => <ProviderBrandMark type={type} />}
+              ariaLabel={copy.defaultModel}
+              disabled={saving || !props.connectionsInteractive}
+              loading={saving}
+              triggerClassName="settingsModelPickerTrigger"
+              onValueChange={persistDefault}
+            />
+          }
+        />
+      ) : props.showConnectionsPlaceholder ? (
+        <SettingsRowSkeleton
+          label={copy.defaultModel}
+          description={copy.defaultModelHelp}
+          width="8rem"
+        />
+      ) : null}
+      {props.settingsAvailable ? (
+        <SettingsRow
+          label={copy.defaultPermission}
+          description={copy.defaultPermissionHelp}
+          end={
+            <PermissionModeSelect
+              activeMode={props.permissionMode}
+              onSelect={(mode) => {
+                void persistPermissionMode(mode);
+              }}
+              align="end"
+              disabled={savingPermissionMode || !props.settingsInteractive}
+              ariaLabel={copy.defaultPermission}
+            />
+          }
+        />
+      ) : props.showSettingsPlaceholder ? (
+        <SettingsRowSkeleton
+          label={copy.defaultPermission}
+          description={copy.defaultPermissionHelp}
+          width="7rem"
+        />
+      ) : null}
+      {/* The absent option is first and means exactly that: no preference, so
+          each model uses its own. It is not a level, which is why the composer
+          menu now calls that same state 模型默认 rather than 默认 — the old
+          wording promised a knob that did not exist anywhere. */}
+      {props.settingsAvailable ? (
+        <SettingsRow
+          label={copy.defaultThinking}
+          description={copy.defaultThinkingHelp}
+          end={
+            <Selector
+              label={copy.defaultThinking}
+              isLabelHidden
+              value={props.thinkingLevel ?? FOLLOW_MODEL_DEFAULT}
+              onChange={(value) => {
+                void persistThinkingLevel(
+                  value === FOLLOW_MODEL_DEFAULT ? undefined : (value as ThinkingLevel),
+                );
+              }}
+              options={[
+                { value: FOLLOW_MODEL_DEFAULT, label: copy.followModelDefault },
+                ...THINKING_LEVELS.map((level) => ({
+                  value: level,
+                  label: conversationCopy.model.level[level],
+                })),
+              ]}
+              isDisabled={savingThinkingLevel || !props.settingsInteractive}
+            />
+          }
+        />
+      ) : props.showSettingsPlaceholder ? (
+        <SettingsRowSkeleton
+          label={copy.defaultThinking}
+          description={copy.defaultThinkingHelp}
+          width="7rem"
+        />
+      ) : null}
+    </SettingsSection>
+  );
+}
+
+function NetworkProxySection(props: {
+  settings: AppSettings;
+  isInteractive: boolean;
+  testNetworkProxy(input: TestProxyInput): Promise<import('@vera/core/settings').SettingsTestResult>;
+  onUpdate(
+    patch: Parameters<typeof window.vera.settings.update>[0],
+  ): Promise<UpdateAppSettingsResult>;
+}) {
+  const host = useRuntimeHostSettingsTarget();
+  const locale = useUiLocale();
+  const copy = getSettingsPreferencesCopy(locale).general;
+  const persistedProxy = props.settings.network.proxy;
+  const [testing, setTesting] = useState(false);
+  const proxyTestGuard = useActionGuard<"test">();
+  const toast = useToast();
+  const {
+    draft: proxyDraft,
+    draftRef: proxyDraftRef,
+    mountedRef: networkPageMountedRef,
+    update,
+  } = useOptimisticSettingsDraft<NetworkProxySettings>(
+    persistedProxy,
+    (patch) =>
+      props
+        .onUpdate({ network: { proxy: patch } })
+        .then((result) => result.settings.network.proxy),
+    {
+      onError: (error) =>
+        toast.error(
+          copy.saveNetworkFailed,
+          settingsActionErrorMessage(error, locale),
+          undefined,
+          { profileId: host.profileId },
+        ),
+    },
+  );
+
+  function updateProxy(patch: Partial<NetworkProxySettings>) {
+    if (!props.isInteractive) return Promise.resolve();
+    return update(patch);
+  }
+
+  async function testProxy() {
+    if (!props.isInteractive) return;
+    if (!proxyTestGuard.begin("test")) return;
+    setTesting(true);
+    try {
+      const result = await props.testNetworkProxy(toProxyTestInput(proxyDraftRef.current));
+      const latency =
+        result.latencyMs !== undefined ? ` · ${result.latencyMs} ms` : "";
+      const message = settingsTestResultMessage(result, locale);
+      if (result.ok && networkPageMountedRef.current) {
+        toast.success(copy.proxyReachable, `${message}${latency}`);
+      } else if (networkPageMountedRef.current) {
+        toast.error(
+          copy.proxyTestFailed,
+          message,
+          undefined,
+          { profileId: host.profileId },
+        );
+      }
+    } catch (error) {
+      if (networkPageMountedRef.current) {
+        toast.error(
+          copy.proxyTestError,
+          settingsActionErrorMessage(error, locale),
+          undefined,
+          { profileId: host.profileId },
+        );
+      }
+    } finally {
+      proxyTestGuard.finish();
+      if (networkPageMountedRef.current) {
+        setTesting(false);
+      }
+    }
+  }
+
+  return (
+    <>
+      <SettingsRow
+        label={copy.proxy}
+        description={copy.proxyHelp}
+        end={
+          <Switch
+            label={copy.enableProxy}
+            isLabelHidden
+            value={proxyDraft.enabled}
+            isDisabled={!props.isInteractive}
+            onChange={(enabled) => void updateProxy({ enabled })}
+          />
+        }
+      />
+      {proxyDraft.enabled && (
+        <>
+          <SettingsField>
+            <FormLayout direction="horizontal">
+              <Selector
+                value={proxyDraft.protocol}
+                label={copy.proxyProtocol}
+                options={[
+                  { value: "http", label: "HTTP/HTTPS" },
+                  { value: "https", label: "HTTPS" },
+                  { value: "socks5", label: "SOCKS5" },
+                ]}
+                width="100%"
+                isDisabled={!props.isInteractive}
+                onChange={(protocol) =>
+                  void updateProxy({
+                    protocol: protocol as NetworkProxySettings["protocol"],
+                  })
+                }
+              />
+              <TextInput
+                value={proxyDraft.host}
+                onChange={(value) => void updateProxy({ host: value })}
+                placeholder="127.0.0.1"
+                label={copy.serverAddress}
+                isDisabled={!props.isInteractive}
+              />
+              <NumberInput
+                label={copy.port}
+                value={proxyDraft.port || null}
+                isIntegerOnly
+                onChange={(value) => void updateProxy({ port: value ?? 0 })}
+                placeholder="7890"
+                isDisabled={!props.isInteractive}
+              />
+            </FormLayout>
+          </SettingsField>
+
+          <SettingsRow
+            label={copy.proxyAuth}
+            description={copy.proxyAuthHelp}
+            end={
+              <Switch
+                label={copy.enableProxyAuth}
+                isLabelHidden
+                value={proxyDraft.authEnabled}
+                isDisabled={!props.isInteractive}
+                onChange={(authEnabled) => void updateProxy({ authEnabled })}
+              />
+            }
+          />
+
+          {proxyDraft.authEnabled && (
+            <SettingsField>
+              <FormLayout direction="horizontal">
+                <TextInput
+                  value={proxyDraft.username}
+                  onChange={(value) => void updateProxy({ username: value })}
+                  label={copy.username}
+                  isDisabled={!props.isInteractive}
+                />
+                <PasswordInput
+                  value={proxyDraft.password}
+                  onChange={(next) => void updateProxy({ password: next })}
+                  label={copy.password}
+                  isDisabled={!props.isInteractive}
+                />
+              </FormLayout>
+            </SettingsField>
+          )}
+
+          <SettingsField>
+            <TextInput
+              value={proxyDraft.bypassList.join(", ")}
+              onChange={(value) =>
+                void updateProxy({ bypassList: csvList(value) })
+              }
+              placeholder="metaso.cn, baidu.com"
+              label={copy.bypassList}
+              description={copy.bypassHelp}
+              width="100%"
+              isDisabled={!props.isInteractive}
+            />
+          </SettingsField>
+
+          <SettingsField>
+            <Banner
+              status="info"
+              title={copy.autoBypass(proxyDraft.autoBypassDomains.length)}
+            />
+          </SettingsField>
+
+          <SettingsActions>
+            <Button
+              variant="primary"
+              isLoading={testing}
+              isDisabled={!props.isInteractive}
+              onClick={() => void testProxy()}
+              label={copy.testCurrent}
+            />
+          </SettingsActions>
+        </>
+      )}
+    </>
+  );
+}
+
+function toProxyTestInput(proxy: NetworkProxySettings): TestProxyInput {
+  return {
+    proxy: {
+      enabled: proxy.enabled,
+      type: proxy.protocol,
+      host: proxy.host.trim(),
+      port: proxy.port,
+      authEnabled: proxy.authEnabled,
+      username:
+        proxy.authEnabled && proxy.username.trim()
+          ? proxy.username.trim()
+          : undefined,
+      password:
+        proxy.authEnabled && proxy.password ? proxy.password : undefined,
+      bypassList: proxy.bypassList,
+    },
+  };
+}
+
+function csvList(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}

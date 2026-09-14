@@ -1,0 +1,123 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  // Biome 2.5.4. See https://biomejs.dev/reference/configuration/
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    // Broad include; VCS integration (useIgnoreFile) already skips anything
+    // in .gitignore (node_modules, dist, etc). The excludes below cover
+    // tracked files that still shouldn't be touched by Biome.
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!package-lock.json",
+      // Generated shadcn/ui config — not hand-authored source.
+      "!components.json"
+    ]
+  },
+  // Formatter enabled together with the one-time whole-tree baseline commit
+  // in this PR (see .git-blame-ignore-revs) and a `biome format` check-mode
+  // CI gate. Style matches the dominant existing conventions so the baseline
+  // diff is minimal churn, not a restyle.
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "includes": [
+      "**",
+      // The UI surface (vera-desktop + vera-ui) is formatter-EXCLUDED
+      // (still fully linted): desktop's "source-contract tests" read .ts/.tsx
+      // source — desktop's own AND vera-ui's — and regex-match exact
+      // single-line shapes; a whole-tree reformat broke 145 desktop-source
+      // assertions plus ~45 contracts introspecting vera-ui. Formatting
+      // the UI surface lands as a follow-up once those contract tests are
+      // made format-tolerant. See #415.
+      "!vera-desktop/**",
+      "!vera-ui/**",
+      // Byte-sensitive provenance / generated artifacts — NOT hand-authored
+      // source. These are read whole and SHA-256'd + size-checked by the
+      // executor preparation scripts, so reformatting breaks provenance
+      // verification; bundled-tools.json is their generated sibling.
+      "!vera-desktop/resources/licenses/**",
+      "!vera-desktop/bundled-tools.json"
+    ]
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    // Admission bar for this gate (PR #1019 review). This is an EXPLICIT
+    // ALLOWLIST (recommended: false): nothing enters the gate implicitly, so
+    // it can never silently drift from a correctness gate into a style gate.
+    // A rule joins only if BOTH hold:
+    //   1. it catches a defect, not a style preference; and
+    //   2. the tree is already zero-violation, or is hand-fixed to zero in
+    //      the same change that turns the rule on.
+    // Pure-style and formatting concerns are out of scope by design. Adding a
+    // rule is always a deliberate decision, never a side effect of a preset.
+    "rules": {
+      // `none` = start from an empty ruleset (the explicit-allowlist default);
+      // only the rules listed below are active.
+      "preset": "none",
+      "correctness": {
+        // A short-circuit to `undefined` would throw at the later member
+        // access. Hand-fixed to zero across the test suite in this PR.
+        "noUnsafeOptionalChaining": "error"
+      },
+      "suspicious": {
+        // Caught a real masked bug: a duplicate `fixtureState` key in
+        // cu-provider-matrix.test.mjs silently overrode the intended input.
+        // Hand-fixed to zero in this PR.
+        "noDuplicateObjectKeys": "error",
+        // `a?.b!` — a non-null assertion on an optionally-chained value
+        // defeats the short-circuit and can throw. Hand-fixed to zero.
+        "noNonNullAssertedOptionalChain": "error"
+      }
+    }
+  },
+  // Import-sorting / organize-imports assist actions stay disabled; they are
+  // a formatting concern and belong with the formatter baseline PR (#415).
+  // Generated model metadata and its repository-contained input projection
+  // exceed Biome's 1 MiB default. An over-size file is skipped with a warning
+  // while `format:check` still exits 0, so keep both generated authorities under
+  // the formatter without raising the ceiling for hand-written files.
+  "overrides": [
+    {
+      "includes": [
+        "vera-core/src/model-metadata.generated.ts",
+        "scripts/model-metadata/models-dev-api.snapshot.json"
+      ],
+      "files": { "maxSize": 2097152 }
+    }
+  ],
+  "assist": {
+    "enabled": false
+  }
+}

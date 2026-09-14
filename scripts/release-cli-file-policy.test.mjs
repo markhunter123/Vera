@@ -1,0 +1,238 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import assert from 'node:assert/strict';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { describe, test } from 'node:test';
+import {
+  collectWorkspaceDependencyClosure,
+  isCurrentDevelopmentJavaScript,
+  isVeraDevelopmentArtifact,
+  isThirdPartyDevelopmentArtifact,
+  orderWorkspaceBuilds,
+  renderNpmReadme,
+  resolveWorkspaceReleaseFiles,
+  workspaceReleaseFiles,
+} from './release-cli-file-policy.mjs';
+
+test('the npm README receives the canonical WIP disclaimer exactly once', () => {
+  const disclaimer = 'Canonical first line.\n\nCanonical final line.\n';
+  assert.equal(
+    renderNpmReadme('Before\n<!-- ASF-WIP-DISCLAIMER -->\nAfter\n', disclaimer),
+    'Before\nCanonical first line.\n\nCanonical final line.\nAfter\n',
+  );
+  assert.throws(() => renderNpmReadme('No marker\n', disclaimer), /exactly one/u);
+});
+
+describe('CLI release file policy', () => {
+  test('derives the runtime workspace build order from production dependencies', () => {
+    const manifests = new Map([
+      ['vera-agent', { name: 'vera-agent', dependencies: { '@vera/eval': '0.1.0' } }],
+      ['@vera/eval', { name: '@vera/eval', dependencies: { '@vera/core': '0.1.0' } }],
+      ['@vera/core', { name: '@vera/core' }],
+    ]);
+
+    assert.deepEqual(collectWorkspaceDependencyClosure('vera-agent', manifests), [
+      '@vera/core',
+      '@vera/eval',
+      'vera-agent',
+    ]);
+  });
+
+  test('orders selected runtime workspaces by local build-time dependencies', () => {
+    const selected = [
+      { name: '@vera/runtime', manifest: { devDependencies: { '@vera/storage': '0.1.0' } } },
+      { name: '@vera/storage', manifest: {} },
+      { name: 'vera-agent', manifest: { dependencies: { '@vera/runtime': '0.1.0' } } },
+    ];
+
+    assert.deepEqual(orderWorkspaceBuilds(selected), [
+      '@vera/storage',
+      '@vera/runtime',
+      'vera-agent',
+    ]);
+  });
+
+  test('release file declarations cannot escape or overlap their workspace', () => {
+    for (const releaseFiles of [
+      ['dist', '../secret'],
+      ['dist', 'dist/runtime'],
+    ]) {
+      assert.throws(
+        () => workspaceReleaseFiles({ name: '@vera/example', releaseFiles }),
+        /unsafe|overlap/u,
+      );
+    }
+  });
+
+  test('release file declarations reject directories other than dist', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'vera-release-files-'));
+    try {
+      mkdirSync(join(workspace, 'dist'));
+      mkdirSync(join(workspace, 'runtime-assets'));
+      assert.throws(
+        () =>
+          resolveWorkspaceReleaseFiles(workspace, {
+            name: '@vera/example',
+            releaseFiles: ['dist', 'runtime-assets'],
+          }),
+        /must be a regular file/u,
+      );
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects third-party development artifacts on every platform', () => {
+    for (const path of [
+      'coverage/lcov.info',
+      'test/fixture/input.json',
+      'lib/parser.test.js',
+      'dist/index.d.ts',
+      'dist/index.js.map',
+      String.raw`fixtures\windows.json`,
+      'src/index.ts',
+    ]) {
+      assert.equal(isThirdPartyDevelopmentArtifact(path), true, path);
+    }
+  });
+
+  test('preserves third-party runtime source and native assets', () => {
+    for (const path of [
+      'src/index.js',
+      'dist/index.js',
+      'prebuilds/darwin-arm64/pty.node',
+      'prebuilds/win32-x64/conpty/OpenConsole.exe',
+      'LICENSE',
+      'package.json',
+    ]) {
+      assert.equal(isThirdPartyDevelopmentArtifact(path), false, path);
+    }
+  });
+
+  test('keeps the stricter Vera-owned package boundary', () => {
+    assert.equal(isVeraDevelopmentArtifact('src/index.js'), true);
+    assert.equal(isVeraDevelopmentArtifact('dist/__tests__/fixture.js'), true);
+    assert.equal(isVeraDevelopmentArtifact('dist/index.js'), false);
+  });
+
+  test('development packages exclude JavaScript left by deleted sources', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'vera-development-output-'));
+    try {
+      mkdirSync(join(workspace, 'src'), { recursive: true });
+      writeFileSync(join(workspace, 'src', 'current.ts'), 'export {}\n');
+      assert.equal(isCurrentDevelopmentJavaScript(workspace, 'current.js'), true);
+      assert.equal(isCurrentDevelopmentJavaScript(workspace, 'deleted.js'), false);
+      assert.equal(
+        isCurrentDevelopmentJavaScript(
+          workspace,
+          'workers\\generated.js',
+          new Set(['workers/generated.js']),
+        ),
+        true,
+      );
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects Vera test-only modules so no test backend can ship', () => {
+    for (const path of [
+      'dist/test-only/fake-backend.js',
+      'dist/test-only/execution-candidate-e2e-main.js',
+      String.raw`dist\test-only\desktop-e2e-execution.js`,
+    ]) {
+      assert.equal(isVeraDevelopmentArtifact(path), true, path);
+    }
+    assert.equal(isVeraDevelopmentArtifact('dist/execution-candidate-main.js'), false);
+  });
+
+  test('leaves a third-party test-only directory alone', () => {
+    assert.equal(isThirdPartyDevelopmentArtifact('dist/test-only/index.js'), false);
+  });
+});
+
+describe('script imports of workspace build output', () => {
+  // Scripts load built files by path — installed under node_modules or straight
+  // out of vera-*/dist — so neither the export maps nor the typechecker
+  // notice when a target module stops being emitted. This walks every script
+  // and asserts each such literal names a file the build still produces. The
+  // dist trees it asserts against are kept fresh by check:stale, which runs
+  // ahead of this suite in check:release.
+  test('every workspace dist module a script references by path still exists', () => {
+    const repoRoot = resolve(import.meta.dirname, '..');
+    const workspaceDirByPackageName = new Map(
+      readdirSync(repoRoot).flatMap((directory) => {
+        if (!directory.startsWith('vera-')) return [];
+        const manifestPath = join(repoRoot, directory, 'package.json');
+        if (!existsSync(manifestPath)) return [];
+        return [[JSON.parse(readFileSync(manifestPath, 'utf8')).name, directory]];
+      }),
+    );
+    const scriptPaths = [];
+    const collectScripts = (directory) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) collectScripts(path);
+        else if (/\.(?:mjs|cjs|js)$/u.test(entry.name)) scriptPaths.push(path);
+      }
+    };
+    collectScripts(join(repoRoot, 'scripts'));
+    const targets = new Map();
+    for (const scriptPath of scriptPaths) {
+      const source = readFileSync(scriptPath, 'utf8');
+      for (const [literal, packageName, distPath] of source.matchAll(
+        /['"`]node_modules\/(@vera\/[^/'"`]+)\/(dist\/[^'"`]+\.js)['"`]/gu,
+      )) {
+        const workspaceDir = workspaceDirByPackageName.get(packageName);
+        assert.ok(workspaceDir, `${literal} in ${scriptPath} names an unknown workspace package`);
+        targets.set(
+          join(repoRoot, workspaceDir, distPath),
+          `${scriptPath}: ${literal}`,
+        );
+      }
+      for (const [literal, workspaceDir, distPath] of source.matchAll(
+        /['"`](?:\.\.\/)*vera-([^/'"`]+)\/(dist\/[^'"`]+\.js)['"`]/gu,
+      )) {
+        assert.ok(
+          existsSync(join(repoRoot, `vera-${workspaceDir}`)),
+          `${literal} in ${scriptPath} names an unknown workspace directory`,
+        );
+        targets.set(
+          join(repoRoot, workspaceDir, distPath),
+          `${scriptPath}: ${literal}`,
+        );
+      }
+    }
+    assert.ok(targets.size > 0, 'expected scripts to reference workspace dist files');
+    for (const [builtPath, reference] of targets) {
+      assert.ok(existsSync(builtPath), `${reference} names a module the build no longer emits`);
+    }
+  });
+});

@@ -1,0 +1,48 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import type { AgentRunHeader } from '@vera/core/agent-run';
+import { classifyAgentRunRecovery } from '../agent-run-recovery.js';
+
+describe('AgentRun startup recovery', () => {
+  test('fails a graph supervisor permission handoff once its live waiter is lost', () => {
+    const header: AgentRunHeader = {
+      runId: 'run-1',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      status: 'waiting_for_user',
+      backendKind: 'fake',
+      llmConnectionSlug: 'fake',
+      modelId: 'fake-model',
+      cwd: '/tmp/workspace',
+      permissionMode: 'ask',
+      agentGraphWakeId: 'wake-1',
+      agentGraphWakeAttemptId: 'attempt-1',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    const decision = classifyAgentRunRecovery(header, []);
+    assert.equal(decision?.status, 'failed');
+    assert.equal(decision?.failureClass, 'app_restarted');
+    assert.equal(decision?.diagnostic?.recoveryReason, 'stale_user_wait');
+  });
+});

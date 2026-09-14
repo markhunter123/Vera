@@ -1,0 +1,179 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* Library brand marks (simple-icons) render as inline <svg>. Light theme fills
+   each with its official brand hex, carried on the --mcp-brand-fill custom
+   property set per-mark in mcp-brand-marks.tsx. Marks sit at the same 64% ratio
+   as the provider plates. */
+.vera-module-market-icon .vera-mcp-brand-mark {
+  width: 64%;
+  height: 64%;
+  display: block;
+  fill: var(--mcp-brand-fill);
+}
+
+/* Dark theme: near-black brand marks (Vercel ▲, Notion, Slack aubergine) are
+   flagged data-contrast="low" by the luminance gate and inherit the plate's
+   light foreground instead of vanishing on the dark neutral plate. */
+.dark .vera-module-market-icon .vera-mcp-brand-mark[data-contrast="low"] {
+  fill: currentColor;
+}
+
+.vera-mcp-install-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.vera-mcp-install-icon svg {
+  position: absolute;
+}
+
+.vera-mcp-install-spinner { animation: vera-spin 1s linear infinite; }
+
+.vera-mcp-install-cancel {
+  opacity: 0;
+  color: var(--destructive-text);
+  transform: scale(var(--scale-press));
+  transition: transform var(--duration-quick) var(--ease-out-strong);
+}
+
+.vera-mcp-install-button:hover .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-spinner,
+.vera-mcp-install-button:focus-visible .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-spinner {
+  opacity: 0;
+}
+
+.vera-mcp-install-button:hover .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-cancel,
+.vera-mcp-install-button:focus-visible .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-cancel,
+.vera-mcp-install-icon[data-phase="cancelling"] .vera-mcp-install-cancel {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.vera-mcp-install-icon[data-phase="cancelling"] .vera-mcp-install-spinner {
+  opacity: 0;
+}
+
+
+/* The endpoint <code> inside a browse row's supporting line. Follows the
+   description to the shared class; the rule is still live, it just lost its
+   old parent selector when the class moved. */
+.vera-module-row-description code {
+  font: var(--vera-text-supporting);
+}
+
+.vera-mcp-inspector {
+  min-width: 0;
+}
+
+.vera-mcp-inspector-endpoint {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vera-mcp-tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+
+.vera-mcp-tool-list code {
+  font: var(--vera-text-code);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--muted);
+  color: var(--foreground-secondary);
+}
+
+.vera-mcp-stderr {
+  font: var(--vera-text-code);
+  max-height: 132px;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--destructive-wash);
+  color: var(--destructive-text);
+  white-space: pre-wrap;
+}
+
+
+.vera-mcp-editor-choice {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width-hairline) solid var(--border);
+  background: var(--muted);
+}
+
+.vera-mcp-choice-icon {
+  margin-inline-start: var(--space-1);
+}
+
+.vera-mcp-manual-form,
+.vera-mcp-json-form {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0;
+  overflow: hidden;
+}
+
+.vera-mcp-form-fields {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4);
+}
+
+.vera-mcp-primary-fields {
+  min-width: 0;
+  display: grid;
+  /* The second column holds a full command line or URL; the first is a short
+     slug. Equal halves squeezed the field that actually carries content. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-3);
+}
+
+.vera-mcp-advanced-fields {
+  padding-block-start: var(--space-3);
+}
+
+.vera-mcp-json-field {
+  overflow: auto;
+  padding-inline: var(--space-4);
+}
+
+.vera-mcp-json-form > p {
+  font: var(--vera-text-supporting);
+  margin: 0;
+  padding-inline: var(--space-4);
+  color: var(--muted-foreground);
+}
+
+.vera-mcp-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width-hairline) solid var(--border);
+}

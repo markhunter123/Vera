@@ -1,0 +1,142 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* Keep the Astryx Theme wrapper aligned with Vera's product-level font and
+   foreground tokens.
+
+   The root <Theme> renders a display:contents wrapper that establishes
+   Astryx's inheritance baseline: color: var(--color-text-primary) and
+   font-family: var(--font-family-body). It paints nothing itself, but every
+   descendant that inherits text color or font from body would inherit
+   Astryx's values instead — a global repaint smuggled in through
+   inheritance, which the layer order alone cannot stop (the rule targets the
+   wrapper, and nothing else competes on that element).
+
+   color-scheme is left alone: the wrapper's mode comes from the same resolved
+   `.dark` source as the product's, so the values always agree.
+
+   Scoped under the Electron and Storybook renderer roots: Theme also mirrors
+   data-astryx-theme (and data-theme) onto <html>, and a bare
+   [data-astryx-theme] would quietly pin html-level text properties too.
+   Keeping both renderer mounts on the same selector is required for Storybook
+   pixels to remain evidence for the live app.
+
+   No token is re-pinned here, and re-pinning is a last resort: the theme
+   declares its tokens through an `@scope` root, so a name both sides define
+   can be shadowed for a whole subtree in ways layer order alone does not
+   predict — verify any such pin against the live app rather than reasoning
+   about it. --font-size-base used to be pinned back to
+   the product's :root value here to undo the 13px root multiplier; the type
+   scale in astryx-theme/veraTheme.ts now emits the body tier directly, so the two
+   definitions agree and the pin has nothing left to correct. If a future
+   Astryx upgrade reintroduces a conflict, re-derive the set (astryx theme
+   defs ∩ product defs ∩ product var() usage) before pinning anything. */
+:is(#root, #storybook-root) [data-astryx-theme] {
+  font: inherit;
+  color: inherit;
+}
+
+/* Palette seam for the composer footer's Astryx popover surfaces.
+
+   The Astryx neutral theme lives on the app Theme wrapper, closer to these
+   controls than Vera's palette tokens on <html>, so a Selector or menu left
+   alone paints from the neutral defaults: `--color-text-primary` resolves to
+   light-dark(#171717, #fafafa) rather than the product foreground. That is
+   invisible in isolation and obvious side by side — before this seam covered
+   the workspace picker, its options came out in #171717 next to the model
+   list's oklch foreground, two Selectors from one library that did not read as
+   relatives.
+
+   One rule, listed per seam, rather than a copy per control: a second block
+   would be a second authority, and the two would drift the first time the
+   palette changes. Every Vera surface that mounts an Astryx value control or
+   menu popover belongs on this selector list — the model pair's DropdownMenus
+   and the project picker's both read these tokens through their wrapper.
+
+   Verified against the live app per the note above, not reasoned about: the
+   seams' option rows now report identical computed color, weight, size and
+   padding.
+
+   The session trace panel is on the list for the same reason, measured the
+   same way: its Astryx pieces (Text, Heading) reported #262626 / #737373
+   beside product-token figures in the very same rows, which is what a dense
+   instrument panel cannot absorb — every value there is meant to be compared
+   with the value beside it. */
+.vera-model-selection-controls,
+.vera-composer-workspace,
+.vera-composer-plus-menu,
+.permissionModeIcon,
+.vera-inspector-panel {
+  --color-background-surface: var(--background);
+  --color-background-popover: var(--background-elevated);
+  --color-text-primary: var(--foreground);
+  --color-text-secondary: var(--muted-foreground);
+  --color-text-disabled: var(--muted-foreground);
+  --color-icon-primary: var(--foreground);
+  --color-icon-secondary: var(--muted-foreground);
+  --color-border-emphasized: var(--border-strong);
+  --color-overlay-hover: var(--state-hover-bg);
+  --color-accent: var(--accent);
+  --color-accent-muted: oklch(from var(--accent) l c h / 0.12);
+}
+
+/* Titlebar tooltips only: take the popover out of the hit test.
+
+   Astryx keeps `pointer-events: auto` on the tooltip layer deliberately —
+   `onMouseEnter: cancelHide` there is its WCAG 1.4.13 "hoverable" bridge, so
+   content stays readable while the pointer travels onto it. That is correct
+   everywhere the tooltip flips into empty space.
+
+   The titlebar is the one place it cannot flip into empty space. Anchored to a
+   control on the window's top edge there is no room above, so the layer opens
+   downward onto the SideNav's first row (measured live at 86×28 over it).
+   Clicking 展开侧边栏 leaves the pointer parked on its trigger, and the tooltip
+   that reopens covers 新任务 — and the hover bridge is what makes it LINGER
+   there: a pointer moving toward 新任务 crosses the tooltip, which reads as
+   hover and cancels the hide. The affordance holds the target it is covering.
+
+   So the bridge is dropped exactly where it works against itself, and nowhere
+   else: 33 other tooltip call sites across vera-desktop and vera-ui keep
+   Astryx's behavior intact. This is still a local 1.4.13 concession for four
+   icon-only chrome buttons, taken because the alternative is a button that
+   cannot be clicked; the durable fix is upstream collision handling that keeps
+   a flipped tooltip clear of interactive content.
+
+   Scoped by descendant, which is sound here: `useLayer` renders the popover in
+   place rather than through a portal, so a titlebar trigger's layer really is
+   inside `.vera-window-titlebar`. No `!important` — Astryx's StyleX sheet is
+   wrapped in `@layer astryx-base` and imported into `astryx-components`, which
+   this file's `components` layer already outranks. */
+.vera-window-titlebar [role="tooltip"] {
+  pointer-events: none;
+}
+
+/* Lightbox media must breathe, not wallpaper: Astryx caps its <img> at 100%
+   of the dialog, and the dialog is the full viewport — a large screenshot
+   renders edge-to-edge with the close button sitting ON the image. Cap the
+   displayed box with a viewport margin instead; object-fit: contain keeps
+   the aspect ratio, zoom still scales via transform on top of this box, and
+   images smaller than the cap keep their natural size. One rule for every
+   Astryx lightbox (staged-attachment preview and the transcript's), so the
+   two viewers read identically. */
+.astryx-lightbox img {
+  max-width: min(100%, 86vw);
+  max-height: 80vh;
+}
+

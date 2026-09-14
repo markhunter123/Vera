@@ -1,0 +1,325 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* ============================================================================
+   Chat message body
+   ----------------------------------------------------------------------------
+   The MessageBody surface: message row shell, assistant bubble shell, the
+   hover copy button, the streaming caret, and the user-turn meta row.
+   Astryx owns Markdown prose, code-block chrome, and syntax colors.
+
+   Relocated from vera-tokens.css. Authored unlayered (the renderer styles/
+   contract requires it) but pulled into @layer components by
+   `@import ... layer(components)` in styles.css, so the rules keep the exact
+   cascade precedence they had in tokens. Astryx now owns the sender-aware row
+   and bubble chrome; the remaining selectors are product content and actions.
+   ============================================================================ */
+
+/* Astryx owns sender-aware row alignment; Vera only declares the product
+   reading geometry and the deliberately dense conversation type scale. */
+.vera-chat-message {
+  width: 100%;
+  opacity: 1;
+}
+
+.vera-chat-message-list {
+  width: 100%;
+}
+
+.vera-turn-virtual-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  contain: layout style;
+}
+
+.vera-chat-message-loading {
+  display: grid;
+  place-items: center;
+  min-height: min(240px, 40vh);
+  padding: var(--space-6);
+}
+
+/* Astryx's ChatMessageList renders a `flex: 1` spacer before its rows so a
+   short conversation sits on the composer instead of hanging from the top.
+   That spacer is unconditional, so on the empty surface it splits the column
+   with the empty-state holder — which is itself `flex: 1` and centres its
+   content — and the hero lands centred in the BOTTOM half: measured 172px
+   below the reading column's centre, plus the list's 16px gap.
+   Collapsing the spacer when the last row is an empty state hands the whole
+   column back to the holder, and its own centring is then true to the
+   surface. Keyed on the empty-state content rather than on "no messages"
+   because a single-message conversation must keep the push-to-bottom. */
+.vera-chat-message-list
+  > *:has(> :last-child > :is(.vera-hero, .astryx-empty-state))
+  > [aria-hidden]:empty {
+  display: none;
+}
+
+/* The conversation reading tier is Astryx's body role: 14px with the 20px
+   4px-grid leading the type scale computes for it. The leading used to be a
+   hand-rolled 1.6154em (21px) that matched neither Vera's --leading-* tiers
+   nor Astryx's. */
+.vera-chat-message-bubble {
+  font: var(--vera-text-body);
+}
+
+/* Padding, max-width and radius belong to ChatMessageBubble; re-declaring any
+   of them here only forks the primitive. What stays is the product tint and the
+   verbatim-text rule (Vera renders user input as typed, which the primitive has
+   no opinion about).
+
+   Radius is absent on purpose. The primitive resolves `--radius-chat` (28px),
+   the same token `ChatComposer` reads through `--_chat-composer-radius`, so the
+   bubble and the dock round together as one conversation surface — DESIGN.md §6
+   records that as the chat rung. Astryx publishes no radius prop on this
+   component (only `variant`), so a product radius could only fight the
+   primitive, never configure it.
+
+   Scoped to the filled bubble on purpose: the assistant bubble is `ghost` (no
+   fill, measured transparent), so it carries no tint to override. */
+.vera-chat-message-bubble-user {
+  background: var(--chat-user-bg);
+  color: var(--chat-user-foreground, var(--foreground));
+  white-space: pre-wrap;
+}
+
+.vera-chat-message-bubble-assistant {
+  padding: var(--space-0-5) 0 0;
+}
+
+.vera-processing-sequence {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Expanded activity headers stay reachable while their own detail is being
+   read. Native sticky positioning keeps the header in the transcript flow,
+   so it leaves naturally at the card boundary and does not disturb ChatLayout
+   scroll anchoring while reasoning or tool output continues to stream. */
+.vera-turn :is(.vera-deep-thinking, .vera-tool-activity-card) {
+  --vera-activity-sticky-top: var(--space-2);
+  --vera-activity-header-height: var(--h-control-sm);
+}
+
+.vera-turn .vera-activity-card-header[aria-expanded="true"],
+.vera-turn .vera-tool-activity-card [role="button"][aria-expanded="true"] {
+  position: sticky;
+  top: var(--vera-activity-sticky-top);
+  z-index: var(--z-sticky);
+  background: var(--surface-raised);
+  border-radius: var(--radius-element);
+  box-shadow: 0 var(--border-width-hairline) 0 var(--border-soft);
+}
+
+/* A call detail inside an expanded tool group forms a second, bounded sticky
+   tier. The group remains available to collapse the whole run; the lower row
+   collapses only the detail currently being read.
+   Stock ChatToolCalls uses role=button on call rows (no data-slot patch). */
+.vera-turn
+  .vera-tool-activity-card
+  > [role="button"][aria-expanded="true"]
+  ~ div
+  [role="button"][aria-expanded="true"] {
+  top: calc(var(--vera-activity-sticky-top) + var(--vera-activity-header-height));
+}
+
+/* Astryx clips the animated group body with overflow:hidden. `clip` preserves
+   that visual boundary without becoming a scroll ancestor that captures the
+   nested sticky row. The inner wrapper is also a grid item: without an explicit
+   zero minimum its long, nowrap call preview becomes the track's minimum size
+   and stretches every expanded row past the turn instead of ellipsizing it. */
+.vera-turn .vera-tool-activity-card > [role="button"] + div > div {
+  min-width: 0;
+  overflow: clip;
+}
+
+/* Cursor for tool/reasoning disclosure triggers is owned by
+   styles/native-cursor.css (role=button + default !important). */
+
+.vera-turn .astryx-chat-tool-calls [role="button"] > span:nth-child(2) {
+  font: var(--vera-text-label);
+}
+
+/* Reasoning and tool-call rows read at BODY size, not supporting size.
+   Astryx puts the label and preview on inner spans styled as `supporting`
+   (12px on this scale). Measured on main they rendered at 9.75px — Astryx's
+   sm tier at 0.75rem against the old 13px root — which made them the least
+   legible text in the product, and they carry real content — what the agent is
+   thinking and which tool is running — not metadata.
+   Cursor makes the same call: its tool rows sit at body size and lean
+   entirely on --text-secondary/tertiary for de-emphasis. Weight and colour
+   already do that here, so size does not need to.
+
+   Rebinding the role token rather than restyling the spans. Astryx's
+   supporting atoms are `font-size: var(--text-supporting-size)` and
+   `line-height: var(--text-supporting-leading)`, so redefining those two on
+   the trigger reaches every span that opts into the role, at any depth,
+   through inheritance — no !important, since nothing else declares them
+   here, and no dependency on child order.
+   The earlier form of this rule selected `> span:not(:last-child)`, which
+   read as "every span except the chevron". It was wrong for exactly the
+   reason positional selectors are: ChatReasoning wraps its label, duration
+   and preview in a `<div>` (vera-ui/src/astryx-chat-reasoning.tsx), so
+   the rule enlarged the leading icon wrapper and left the reasoning text at
+   supporting size — the one row the retune was for. */
+.vera-turn .astryx-chat-reasoning [role="button"],
+.vera-turn .astryx-chat-tool-calls [role="button"] {
+  --text-supporting-size: var(--text-body-size);
+  --text-supporting-leading: var(--vera-line-body);
+}
+
+/* These boxes need no !important to beat Astryx: its StyleX atoms live in the
+   earlier astryx-components layer, so product CSS in `components` wins on
+   cascade order alone, whatever the specificity — measured, not assumed. */
+.vera-turn .astryx-chat-reasoning [role="button"] > span:last-child,
+.vera-turn .astryx-chat-tool-calls [role="button"] > span:last-child {
+  width: 14px;
+  height: 14px;
+  margin-inline-start: auto;
+}
+
+/* Both chevrons are the same registry icon, which wraps its svg in a span —
+   so the wrapper (`> *`) needs sizing too, not just the svg. */
+.vera-turn :is(.astryx-chat-reasoning, .astryx-chat-tool-calls) [role="button"] > span:last-child svg,
+.vera-turn :is(.astryx-chat-reasoning, .astryx-chat-tool-calls) [role="button"] > span:last-child > * {
+  width: 10px;
+  height: 10px;
+}
+
+@media (hover: hover) {
+  .vera-turn .astryx-chat-tool-calls [role="button"]:hover,
+  .vera-turn .astryx-chat-reasoning [role="button"]:hover {
+    background-color: var(--foreground-5);
+    border-radius: var(--radius-element);
+  }
+}
+
+/* Row detail open: same 0fr→1fr medium motion as group/reasoning.
+
+   The Astryx duration/ease below are deliberate, not a leak of the product
+   scale. Astryx ChatToolCalls animates its own group open with
+   `grid-template-rows --duration-medium` and its own easing; a detail row that
+   expands beside one has to share that clock or the two disclosures visibly
+   desync. Product motion belongs on the vera-tokens scale — this is the
+   exception that follows a neighbouring Astryx component, so retune it only
+   when ChatToolCalls moves. Astryx exports --duration-medium as a CSS var but
+   not its easing, so the curve is copied by value. */
+@keyframes vera-chat-tool-detail-open {
+  from { grid-template-rows: 0fr; }
+  to { grid-template-rows: 1fr; }
+}
+
+.vera-chat-tool-detail {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: vera-chat-tool-detail-open var(--duration-medium, 300ms) cubic-bezier(0.24, 1, 0.4, 1) both;
+}
+
+.vera-chat-tool-detail-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vera-chat-tool-detail {
+    animation: none;
+  }
+}
+
+/* --- User-turn meta row (relocated from tool-output.css) ----------------- */
+/* The time is an Astryx `Timestamp`, so the quiet register (supporting tier,
+   secondary colour) is the component's own default and is not restated here.
+   What stays is what the component does not decide:
+
+   - #1879: height off the control ruler, not off the line box. Measured then,
+     bumping this element's leading to 40px took the box from 20px to 40px and
+     carried the meta row with it. `--h-control-xs` is 20px, what the supporting
+     leading already resolves to, so the pin is pixel-neutral today and
+     load-bearing the next time a leading moves. Safe to pin because `nowrap`
+     makes single-line a property of this box rather than an assumption.
+   - `tabular-nums`, because `Timestamp`'s `time` format renders the hour with
+     `hour: 'numeric'` — no leading zero, so `9:05` and `14:32` differ by a
+     digit. The row is right-aligned, so that difference shows up on the left
+     edge; equal-width digits keep it to the one character it really is. */
+.vera-message-time-inline {
+  height: var(--h-control-xs);
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* User turn meta row: quiet time + a copy affordance, right-aligned
+   beneath the message block (the parent `Message role="user"` aligns its
+   items to flex-end, so this row shrink-wraps and hugs the right edge).
+
+   The row's own box is 28px — the height of the action buttons, not of the
+   12px time beside them — so it reads tighter against the bubble than its
+   4px top margin suggests. Astryx's default is nudged one step to 6px to give
+   the row back some air without opening a visible gap. */
+.vera-message-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-top: var(--space-1-5);
+}
+
+/* Turn summary / lineage rows / footer measure column folded into the
+   `@vera/ui` Marker chat primitive's own variants (issue #332 PR2 —
+   vera-ui/src/primitives/chat.tsx); the layout is now location-
+   independent instead of keyed on a `[data-role="assistant"]` descendant. */
+
+/* --- Conversation heading scale ------------------------------------------- */
+/* Moved to the transcript rhythm table in vera-ui/src/styles.css. The
+   argument for flattening the document ladder is unchanged; what changed is
+   where it is expressed. These rules keyed on a `.vera-turn` ancestor, which
+   made the heading scale a function of DOM position: the same MarkdownBody
+   rendered document-sized headings in the Daily Review and flat ones in a
+   turn, and no Storybook story could reproduce the transcript without
+   remembering to wrap one. The rhythm table keys on Astryx's own
+   `data-density` instead, so the scale follows the `density` prop that already
+   distinguishes the two surfaces. It also keeps two size steps rather than
+   one — h2 and h3 used to be identical in size, weight and colour. */
+
+.vera-chat-message pre:not([data-vera-contract="markdown"] pre) {
+  margin: 0;
+  font: inherit;
+}
+
+/* System-note pill. Markdown descendants are excluded through Vera's product
+   boundary so raw-pre treatment cannot become a second code-block authority. */
+.vera-chat-message[data-sender="system"]
+  pre:not([data-vera-contract="markdown"] pre) {
+  font: var(--vera-text-supporting);
+  display: inline-flex;
+  border-radius: var(--radius-pill);
+  background: oklch(from var(--info) l c h / 0.08);
+  color: var(--info-text);
+  padding: var(--space-0-5) var(--space-1-5);
+}
+.vera-transcript-history-controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+}

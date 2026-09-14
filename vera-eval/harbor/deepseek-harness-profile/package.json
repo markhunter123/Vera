@@ -1,0 +1,10 @@
+{
+  "name": "dsh-profile-vera-eval",
+  "private": true,
+  "dependencies": {},
+  "dsh": {
+    "profile": {
+      "bundles": []
+    }
+  }
+}

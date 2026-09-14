@@ -1,0 +1,84 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Dependency audit
+
+on:
+  schedule:
+    # Offset from the hour to reduce peak-time scheduling delays.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/dependency-audit.yml
+      - scripts/audit-shipped-dependencies.mjs
+      - scripts/third-party-closure.mjs
+      - package.json
+      - package-lock.json
+      - 'vera-*/package.json'
+      - 'vera-*/package.json'
+  push:
+    branches: [main]
+    paths:
+      - scripts/audit-shipped-dependencies.mjs
+      - scripts/third-party-closure.mjs
+      - package.json
+      - package-lock.json
+      - 'vera-*/package.json'
+      - 'vera-*/package.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        # The full tree, not --omit=dev: the shipped-closure audit below walks
+        # the renderer roots, which npm labels dev even though they ship.
+        run: npm ci --ignore-scripts
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Audit shipped desktop closure
+        run: node scripts/audit-shipped-dependencies.mjs
+
+      - name: Verify registry signatures
+        # The full tree, not `--omit=dev`. Two reasons it has to be both:
+        # the renderer roots live in devDependencies while their code ships
+        # inside `dist-renderer`, and signature verification also protects
+        # everything that *executes* during the build — a tampered vite or
+        # biome can pollute the artifact without ever being packaged.
+        run: npm audit signatures

@@ -1,0 +1,1156 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+@import 'katex/dist/katex.min.css';
+
+/* Vera product compositions shared across desktop renderer surfaces. Astryx
+   owns generic component chrome; these selectors own only product semantics. */
+
+/* An Item row draws a focus ring for ITS OWN tab stop, never for a control
+   that already draws one.
+
+   Astryx's Item (and everything built on it — ListItem, and so every settings
+   row) applies `outline: 2px solid accent` at `:has(:focus-visible)`,
+   unconditionally. That is right for an interactive row: `onClick`/`href`
+   makes Item render an INVISIBLE `<button>`/`<a>` as a direct child, and the
+   row's ring is that button's only visible focus indicator. It is wrong for
+   every other row, where the focusable thing is a real control in the end slot
+   that rings itself — the row ring is then a second outline around a whole
+   label + description + control band.
+
+   Two ways this showed up, both measured in a real window:
+
+   1. Tabbing onto any settings-row control — a Selector trigger, a Switch, a
+      SegmentedControl, a ghost Button — lit the control AND the full row.
+   2. Opening the 默认模型 picker outlined the entire row and nothing else.
+      A Selector popup is a native `popover` element: the top layer moves where
+      it PAINTS, not where it sits in the DOM, so it is still a descendant of
+      the row. Focus goes to the popup's search input on open, `:has()` walks
+      up to the row, and the row rings — while the trigger, whose own wrapper
+      is a sibling of the popup, does not. Reported as "点开下拉框时外面整行
+      出现一个蓝色的框".
+
+   `:not(:has(> :is(a, button):focus-visible))` is what separates the two: the
+   only `<a>`/`<button>` that is a DIRECT child of an Item root is that
+   invisible tab stop, since start/end/label content each sit inside their own
+   span. So an interactive row keeps its ring when its own tab stop has focus,
+   and loses it only when focus is on a control that owns its indicator — which
+   is also the case for a row carrying both.
+
+   Product CSS is the last cascade layer (`components`, see
+   cascade-layers.css), so this wins over the compiled StyleX atom regardless
+   of that atom's `:not(#\#)` specificity padding.
+
+   Gated on `forced-colors: none` because the premise — "the control already
+   draws one" — is only true when the page controls its own colors. Under
+   Windows High Contrast the control's affordance is gone: forced-colors drops
+   `box-shadow` entirely and repaints every border in the same system color, so
+   an Astryx field looks identical resting and focused, and its trigger button
+   sets `outline: none` on itself (Selector.tsx: the wrapper is supposed to
+   carry the ring). The row outline is then the ONLY indicator that survives —
+   outline is the one focus property forced-colors preserves — and taking it
+   away leaves a keyboard user with no visible focus at all. So there, the
+   doubled ring is the lesser problem and the row keeps it.
+
+   Fixing it at the control instead was the other option and is not better:
+   it would mean product CSS reaching past the design system into the internals
+   of Selector, Switch, SegmentedControl and Button, one forced-colors rule per
+   control, to restore what each was supposed to draw itself. */
+@media (forced-colors: none) {
+  .astryx-item:has(:focus-visible):not(:has(> :is(a, button):focus-visible)) {
+    outline: none;
+  }
+}
+
+.vera-quote-chip-remove { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; border: 0; color: var(--muted-foreground); background: transparent; transition: color var(--duration-quick) var(--ease-out-strong), background var(--duration-quick) var(--ease-out-strong); }
+.vera-quote-chip-remove:hover { color: var(--foreground); background: var(--state-hover-bg); }
+.vera-quote-chip-remove:focus-visible { color: var(--foreground); background: var(--state-hover-bg); outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 1px; }
+
+.vera-page-header-title,
+.vera-page-header-eyebrow,
+.vera-page-header-subtitle { margin: 0; }
+.vera-page-header-content { min-width: 0; }
+.vera-page-header-heading-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+
+.vera-stat-tile { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; }
+/* Visual System 2.0 (T4): flat. DESIGN.md §5 says default surfaces are flat and
+   depth comes from the ladder, then a line, then shadow only for something that
+   genuinely floats — a stat tile sits on the plate. It already states its edge
+   with a border, so the resting shadow was also a second separator on the same
+   edge (§4's One Means Rule). Dropping it retires --card-shadow's last consumer
+   rather than promoting it to --elevation-raised, which would have made a
+   stationary tile float harder than it did before. */
+.vera-stat-tile-outline { border: 1px solid var(--card-border-color, var(--border)); border-radius: var(--radius-surface); background: var(--card-bg, var(--background)); }
+.vera-stat-tile-filled { border-radius: var(--radius-control); background: var(--foreground-5); }
+.vera-stat-tile-border-info { border-color: oklch(from var(--info) l c h / 0.24); }
+.vera-stat-tile-border-success { border-color: oklch(from var(--success) l c h / 0.24); }
+.vera-stat-tile-border-warning { border-color: oklch(from var(--warning) l c h / 0.28); }
+.vera-stat-tile-border-destructive { border-color: oklch(from var(--destructive) l c h / 0.3); }
+.vera-stat-tile-empty { opacity: var(--opacity-disabled); }
+.vera-stat-tile-value-outline { font: var(--vera-text-heading-1); }
+.vera-stat-tile-value-filled { font: var(--vera-text-heading-4); }
+/* After the two role rules, not before them. The `font:` shorthand resets
+   `font-variant-numeric` along with the four axes the role names, and both
+   modifiers land on this same element — so declared first, the tabular figures
+   these tiles exist to align were being reset away by the role. Ordering is
+   the fix rather than repeating the declaration on each modifier: it is one
+   authority, and it is the general rule for any sub-property the roles do not
+   carry. */
+.vera-stat-tile-value { display: block; min-width: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--foreground); font-variant-numeric: tabular-nums; white-space: normal; }
+.vera-stat-tile-value-info { color: var(--info-text); }
+.vera-stat-tile-value-success { color: var(--success-text); }
+.vera-stat-tile-value-warning { color: var(--warning-text); }
+.vera-stat-tile-value-destructive { color: var(--destructive-text); }
+.vera-stat-tile-label {
+  font: var(--vera-text-supporting);
+ color: var(--foreground-secondary); letter-spacing: 0.025em; }
+.vera-stat-tile-detail {
+  font: var(--vera-text-supporting);
+ color: var(--muted-foreground); }
+
+.vera-quote-chip { display: inline-flex; gap: 4px; padding-left: 8px; background: var(--foreground-alpha-6); box-shadow: inset 0 0 0 1px var(--foreground-alpha-12); }
+.vera-quote-chip-expanded { width: 100%; max-width: 100%; align-items: flex-start; padding-block: 4px; border-radius: var(--radius-surface); }
+/* #1879: measured 24px natural — a 20px line box plus 2 x 2px padding — and
+   `--h-control-sm` IS 24, so the pin is pixel-neutral today and load-bearing
+   the next time a leading moves. This is the collapsed state only; the
+   expanded twin above wraps to many lines and must keep growing. The chip's
+   type lives on `.vera-quote-chip-text`, which is why the derived scan needed
+   two arms rather than three to see it at all. */
+.vera-quote-chip-collapsed { height: var(--h-control-sm); max-width: 240px; align-items: center; padding-block: 2px; border-radius: var(--radius-pill); }
+.vera-quote-chip-removable { padding-right: 2px; }
+.vera-quote-chip-readonly { padding-right: 8px; }
+.vera-quote-chip-icon { width: var(--icon-meta); height: var(--icon-meta); flex: 0 0 auto; color: var(--muted-foreground); }
+.vera-quote-chip-icon-expanded { margin-top: 2px; }
+.vera-quote-chip-text {
+  font: var(--vera-text-supporting);
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  height: auto;
+  border: 0;
+  padding: 0;
+  color: var(--foreground-secondary);
+  background: transparent;
+  text-align: left;
+  box-shadow: none;
+}
+.vera-quote-chip-text-body {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+.vera-quote-chip-text-expanded { max-height: 128px; overflow-y: auto; overflow-wrap: break-word; white-space: pre-wrap; }
+.vera-quote-chip-text-clipped { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vera-quote-chip-label { color: var(--muted-foreground); }
+.vera-quote-chip-remove {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  border-radius: 50%;
+  padding: 0;
+}
+.vera-quote-chip-remove > svg,
+.vera-quote-chip-remove svg { width: var(--icon-meta); height: var(--icon-meta); }
+
+.vera-task-ledger-empty {
+  margin: 0;
+}
+
+/* The meta row holds two different kinds of thing, so it gets two different
+   rules. The time is content — a fact about the message — and stays put; gating
+   it on hover is what hid it from touch and from assistive tech. The actions are
+   chrome and only surface on hover or focus. Astryx already splits these into a
+   `timestamp` and a `footer` slot; the gate belongs on the slot, not on the row
+   that contains both.
+
+   The `· ` between the two slots is Astryx's own separator, rendered whenever
+   the timestamp has something to be separated FROM. It is dropped rather than
+   gated: the two slots already read as separate at rest, since one is text and
+   the other a row of controls that fades in beside it, so the bullet adds a mark
+   without adding a distinction. The slots carry no class of their own, so it is
+   addressed positionally — the timestamp is the first child span and the
+   separator the one right after it (the footer's own children are buttons).
+
+   A transparent action still takes clicks, here and on the assistant footer.
+   `pointer-events: none` looks like the fix and is not obviously safe: it makes
+   the pointer fall through to the ancestor whose `:hover` is what restores the
+   button, so being clickable again depends on the browser redoing hit-testing
+   on a later mouse event. Continuous movement gets there; a jump that lands and
+   stops was not something this surface could be made to reproduce. Left as-is
+   rather than traded for a failure mode that could not be demonstrated. */
+.vera-message-meta > span + span {
+  display: none;
+}
+.vera-message-meta .vera-turn-footer-action {
+  opacity: 0;
+  transition: opacity var(--duration-quick) var(--ease-out-strong);
+}
+.vera-user-message:hover .vera-message-meta .vera-turn-footer-action,
+.vera-user-message:focus-within .vera-message-meta .vera-turn-footer-action {
+  opacity: 1;
+}
+.vera-user-quotes { display: flex; max-width: 100%; flex-wrap: wrap; align-items: flex-start; gap: 4px; }
+.vera-assistant-answer-content { display: flex; width: 100%; min-width: 0; flex-direction: column; gap: 8px; }
+.vera-subagent-session-label,
+.vera-subagent-session-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.vera-subagent-session-label { width: 100%; min-width: 0; }
+.vera-subagent-session-summary { min-width: 0; flex: 1 1 auto; }
+.vera-subagent-session-end { color: var(--muted-foreground); }
+.vera-live-turn-footer-placeholder { height: 32px; margin-top: 2px; }
+.vera-turn-processing,
+.vera-turn-status {
+  font: var(--vera-text-body);
+ display: flex; align-items: center; gap: 8px; padding-block: 2px; color: var(--muted-foreground); }
+/* The live status is the one thing in the turn that is about to happen rather
+   than something that already did, so it gets air the blocks above it do not
+   (they sit on the column's own 8px). Hugging the last tool card read as part
+   of that card. */
+.vera-turn-processing { margin-top: 8px; }
+.vera-turn-provider-retry { margin-top: 8px; }
+.vera-turn-indicator-text { display: inline-flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Duration must match `WORKING_PHRASE_FADE_MS` in chat-turn.tsx: the swap is a
+   fade out, then a text change, then a fade in, and the JS timer is what waits
+   out this transition before rewriting the word. */
+.vera-turn-working-phrase { font-weight: var(--font-weight-medium); transition: opacity var(--duration-large) var(--ease-out-strong); }
+.vera-turn-working-phrase[data-fading="true"] { opacity: 0; }
+.vera-turn-status-separator { color: var(--foreground-alpha-16); }
+/* Tabular figures so a ticking clock changes glyphs without changing width. */
+.vera-turn-elapsed { font-variant-numeric: tabular-nums; }
+/* #1879: an Astryx `Badge variant="yellow"` now — the warning tone it used to
+   draw by hand (hairline + 5% wash) is a variant, and the box comes with it.
+   Product CSS keeps only what is layout: it is a block-level note under the
+   bubble, so it needs its own line and the gap above it. */
+.vera-turn-truncation-badge { display: flex; width: fit-content; margin-top: 6px; cursor: help; }
+.vera-deep-thinking { min-width: 0; }
+/* Reasoning uses the same safe Markdown pipeline as answers, then lowers its
+   visual weight inside the disclosure. The inset rule makes a long derivation
+   scannable without turning it into a second answer bubble. */
+.vera-chat-reasoning-content {
+  margin-block-start: 4px;
+  margin-inline-start: 22px;
+  padding: 2px 0 4px 12px;
+  border-inline-start: 2px solid color-mix(in oklch, var(--link) 32%, var(--border));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.vera-deep-thinking [data-vera-contract="markdown"] .astryx-markdown {
+  color: var(--muted-foreground);
+  font: var(--vera-text-body);
+}
+.vera-deep-thinking [data-vera-contract="markdown"] .astryx-markdown-heading,
+.vera-deep-thinking [data-vera-contract="markdown"] strong {
+  color: color-mix(in oklch, var(--link) 28%, var(--foreground-secondary));
+}
+.vera-deep-thinking [data-vera-contract="markdown"] .astryx-markdown-heading {
+  font: var(--vera-text-label);
+}
+.vera-math {
+  max-width: 100%;
+  color: inherit;
+}
+.vera-math-inline {
+  display: inline;
+}
+.vera-math-display {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 2px;
+}
+
+@keyframes vera-spin { to { transform: rotate(360deg); } }
+.vera-spin { animation: vera-spin 1s linear infinite; }
+
+/* ---------------------------------------------------------------------------
+   Transcript markdown rhythm — the single authority for compact prose spacing.
+
+   Astryx's `density` only reaches the blocks Markdown renders itself. Lists are
+   delegated to the List control, and Markdown hands it a hardcoded
+   `density="compact"` in BOTH modes — so a markdown list is spaced as a
+   clickable row (4px block padding, the RFC #839 control value), not as prose.
+   The result under `density="compact"` was a broken order: list items sat 10px
+   apart while paragraphs sat 4px apart, so same-level items read as further
+   apart than different paragraphs.
+
+   This table restores one rule — visual distance rises with semantic distance —
+   by owning every compact prose gap in one place:
+
+     4px  list items   (same level)
+     12px blocks       (paragraph, list, quote, table, code)
+     16px section      (h3-h6, and either side of an `hr`)
+     24px chapter      (h1, h2)
+
+   Why the block rung is 12px and not the 8px this table first shipped: 8px
+   restored the ORDER the table exists to fix, but never argued its value.
+   Body leading here is 20px, so 8px put two paragraphs 0.4 of a line apart —
+   a paragraph break narrower than the line break inside a paragraph, which is
+   the one distance a reader already knows. 12px is Astryx's own paragraph
+   rhythm at document density (spacingParagraphDefault, `--spacing-3`), so this
+   is the block step returning to the design system rather than a Vera number:
+   the transcript keeps its own HEADING scale and its own list rung, and only
+   stops being denser than the design system between two paragraphs. Measured
+   in Storybook (Product/Markdown → TranscriptTurn) rather than estimated.
+
+   It costs contrast at the top of the ladder — the section step falls from 2x
+   the block gap to 1.33x, so a heading now separates mainly on weight, size
+   and colour rather than on space. That is the price of leaving the heading
+   rungs alone, which is deliberate: heading spacing is what #1857 and this
+   table already decided, and this change is about paragraphs only.
+
+   What holds this: __tests__/markdown-rhythm-contract.test.tsx, and it pins
+   only the two ways this table can break SILENTLY — the runtime hooks these
+   selectors need still being emitted (an Astryx rename kills every rule at
+   once, and a selector that matches nothing never complains), and the
+   ListItem control padding still being neutralized (the mechanism that
+   inverted the ladder in the first place). The values below are NOT pinned,
+   deliberately: a wrong number is visible the moment anyone looks at a
+   transcript, so it does not need a test to be noticed — which is not true of
+   either of the other two.
+
+   Three deliberate choices:
+
+   - Only `[data-density="compact"]`. The document mode is not broken (its
+     lists sit 10px apart against 12px paragraphs, which is already in order),
+     and the Daily Review renders through it. Fixing only the broken half keeps
+     that surface out of the blast radius. Compact is not the transcript
+     alone, though — the desktop Artifact Preview asks for it too, so it takes
+     these gaps as well. For the block rung that is the point rather than a
+     cost: 12px IS the document rhythm, so the preview moves toward Astryx's
+     default rather than further from it. The heading rules below are the ones
+     where sharing is arguable, and they say so.
+   - Scoped to Astryx's own `data-density`, not to a `.vera-turn` ancestor.
+     `themeProps()` reflects every visual prop as a data attribute for exactly
+     this ("consumers target stable data-attribute selectors"), so the rhythm
+     follows the `density` prop instead of where the markdown happens to sit.
+     Storybook then reproduces the transcript by passing the prop, which the
+     old ancestor-scoped rules could not.
+   - Top level only. `>` keeps every gap on the document's own children, so
+     blocks nested inside a list item or a blockquote keep Astryx's own compact
+     4px instead of the block gap. That tier difference is the point, not an
+     oversight: a list item should read as one unit, so two paragraphs inside
+     it belong closer together than two paragraphs in the transcript. The
+     ladder extends downward (4px nested < 12px block) rather than inverting,
+     which is the invariant that matters.
+
+   A gap is a relation BETWEEN two blocks, so every gap rule is an adjacent
+   sibling rule. Two consequences, both load-bearing:
+
+   - The first block matches no gap rule at all, so it needs no reset. The
+     reset form (`> *` for the gap, `> :first-child` to take it back) looks
+     equivalent and is not: `:first-child` scores (0,4,0) against the heading
+     rules' (0,5,0), so a turn that OPENS with a heading — which is most of
+     them — kept the 24px chapter gap above its first line and pushed itself
+     off the top of the bubble. Expressing the relation directly is what makes
+     that unrepresentable rather than merely fixed.
+   - Gaps are margin-top only, on top of a blanket `margin-block: 0` that
+     clears Astryx's own margins. Nothing collapses, so the distance between
+     two blocks is the value declared here. */
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] {
+  --md-gap-list: var(--space-1);
+  --md-gap-block: var(--space-3);
+  --md-gap-section: var(--space-4);
+  --md-gap-chapter: var(--space-6);
+}
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] > * {
+  margin-block: 0;
+}
+/* `:not(dialog)` because a gap is a relation between two blocks in the document
+   flow, and a dialog is not one. Astryx's `Dialog` does not portal, so the
+   Mermaid fullscreen overlay renders as a direct child of the markdown document
+   while being `position: fixed; inset: 0` — an adjacent-sibling margin there
+   pushes the whole viewport-filling overlay off the top of the screen rather
+   than spacing anything (caught by the Mermaid E2E journey, 8px off). The
+   exclusion belongs on the side that RECEIVES the margin; an overlay sitting
+   between two blocks is fine as the `+` antecedent. */
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] > * + *:not(dialog) {
+  margin-block-start: var(--md-gap-block);
+}
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] > * + .astryx-markdown-heading:is([data-level="1"], [data-level="2"]) {
+  margin-block-start: var(--md-gap-chapter);
+}
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] > * + .astryx-markdown-heading:not([data-level="1"], [data-level="2"]) {
+  margin-block-start: var(--md-gap-section);
+}
+/* An `hr` is the only break the author typed by hand. Left on the generic block
+   step it reads no wider than the paragraph boundary above it, so writing one
+   changes nothing — which is the same failure as the flattened heading scale,
+   in a different place. It sits at the section step because that is what it
+   separates. A following h1/h2 still wins on specificity ((0,5,0) beats
+   (0,3,1)) and keeps the chapter gap, so `hr` before a major heading is
+   unaffected. */
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] > * + hr,
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] > hr + *:not(dialog) {
+  margin-block-start: var(--md-gap-section);
+}
+/* Prose list, not a control list: drop the ListItem row padding and express the
+   row rhythm as a gap, so it stays below the block gap above. */
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] .astryx-list-item {
+  padding-block: 0;
+}
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] .astryx-list {
+  gap: var(--md-gap-list);
+}
+/* Heading scale: size says "this is a heading", weight and colour say which
+   level. Astryx's document ladder (20/18/16/14) is a page scale and an agent
+   turn emits `##` every few lines, so the transcript keeps two size steps —
+   but it keeps TWO, not one. The previous rule flattened h2-h6 onto a single
+   size, which left h2 and h3 identical in size, weight AND colour: three
+   levels of structure rendered as three identical bold lines.
+   Cursor (1.43/1.32/1.21), Claude Code (1.14/1.07/1.0) and Codex
+   (1.71/1.43/1.21) all flatten here relative to their own document styles, and
+   opencode goes further — 17/15/13 with h4+ dropped to a muted colour. Nobody
+   flattens to zero. Two steps plus colour sits inside that range.
+
+   RISK, not just a choice: these are the only rules here that are typography
+   rather than spacing, and Astryx's density RFC (facebook/astryx#839) draws
+   the line at "density shifts heights and spacing, not typography". Keying
+   them on `data-density` is honest only while `compact` and "transcript" name
+   the same set, and they DO NOT. Two surfaces ask for compact: the transcript
+   (chat-turn.tsx) and the desktop Artifact Preview
+   (vera-desktop/src/renderer/artifact-preview.tsx, since #2506), so the
+   preview pane has been rendering `.md` files at transcript heading sizes
+   with dimmed h4-h6 ever since. Nothing scopes it out: the
+   `[data-vera-contract="markdown"]` prefix is on every MarkdownBody, so
+   `density` is the whole key.
+
+   Left shared on purpose, not by omission. The preview is a narrow side pane
+   showing a document a few lines at a time, which is the shape the flattening
+   was designed for, and no report has called it wrong. Splitting the key —
+   moving these three rules onto a surface attribute the transcript sets and
+   the preview does not — is a visible change to the preview's typography and
+   belongs in its own change, argued and looked at on that surface rather
+   than smuggled in under a spacing token.
+
+   So: a THIRD compact surface inherits transcript typography silently, and
+   nothing catches it. That is unguarded, and it stays unguarded knowingly —
+   the caller set spans workspaces, so the only test that could hold it is a
+   library test grepping application source. One was written and it was wrong
+   on its first commit, passing while already false. A comment that is checked
+   when these rules are read beats an assertion that lies. */
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] .astryx-markdown-heading:is([data-level="1"], [data-level="2"]) {
+  font: var(--vera-text-heading-3);
+}
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] .astryx-markdown-heading:not([data-level="1"], [data-level="2"]) {
+  font: var(--vera-text-heading-4);
+}
+/* Below h3 the size ladder is spent — h4-h6 already sit at body size, and
+   growing them back would re-create the slabs the flattening exists to avoid.
+   Colour is the one axis left that costs no vertical space, so the deepest
+   levels step down in ink instead. opencode makes the same call at the same
+   point (13px h4-h6 dropped to muted); it is why a turn can carry four levels
+   of structure inside two type sizes. */
+[data-vera-contract="markdown"] .astryx-markdown[data-density="compact"] .astryx-markdown-heading:not([data-level="1"], [data-level="2"], [data-level="3"]) {
+  color: var(--foreground-secondary);
+}
+
+/* Markdown code renderers are custom components so Mermaid can be loaded only
+   for settled Mermaid fences. Astryx skips its own spacing wrapper when
+   `components.code` is set, so the custom block sits directly in the document
+   flow — the compact rhythm above already carries it, and only the document
+   mode needs its margins declared here. */
+.vera-markdown-code { min-width: 0; }
+/* Markdown always gives CodeBlock a structural header, keeping its copy button
+   in a real toolbar instead of overlaying the horizontal scroll viewport. */
+.vera-markdown-code .astryx-codeblock-header {
+  min-height: 32px;
+  padding-block: 2px;
+  padding-inline: var(--spacing-2);
+  border-block-end: 1px solid var(--border);
+}
+/* Astryx pulls a headered code body upward by spacing-2. That is useful when
+   the header is only a language caption, but our header is a distinct toolbar:
+   the pull clips the top padding to 4px while leaving 12px below the line. */
+.vera-markdown-code .astryx-codeblock [role="group"] > div {
+  margin-block-start: 0;
+}
+/* A one-line command, key, or token keeps Astryx's native scrolling viewport,
+   selection, keyboard behavior, and platform scrollbar. */
+.vera-markdown-code[data-vera-code-layout="single-line"] .astryx-codeblock [role="group"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.vera-markdown-code[data-vera-code-layout="single-line"] .astryx-codeblock [role="group"] > div > code {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-block-size: 40px;
+  padding-block: 0;
+}
+/* The CodeBlock scroll viewport is focusable but Astryx leaves it on the UA
+   outline. Give it one clipped-safe Vera ring, then stop the non-interactive
+   prose ListItem's generic focus-within ring from drawing a second outline
+   around the entire numbered-list row. */
+.vera-markdown-code .astryx-codeblock [role="group"]:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring);
+}
+[data-vera-contract="markdown"] .astryx-list-item:has(.vera-markdown-code :focus-visible) {
+  outline: none;
+}
+.vera-markdown-code-default { margin-block: var(--space-3) var(--space-4); }
+[role="document"] > .vera-markdown-code:first-child { margin-block-start: 0; }
+[role="document"] > .vera-markdown-code:last-child { margin-block-end: 0; }
+.vera-mermaid-diagram {
+  display: flex;
+  max-width: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--background);
+}
+.vera-mermaid-toolbar {
+  min-height: 36px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--foreground-3);
+}
+.vera-mermaid-title { font: var(--vera-text-supporting); color: var(--muted-foreground); }
+.vera-mermaid-actions { display: flex; align-items: center; gap: 2px; }
+.vera-mermaid-zoom-actions { display: flex; align-items: center; gap: 2px; }
+.vera-mermaid-zoom-level {
+  font: var(--vera-text-code);
+  min-width: 4.5ch;
+  color: var(--muted-foreground);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.vera-mermaid-viewport {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  overflow: auto;
+  padding: var(--space-3);
+  cursor: default;
+  outline: none;
+  overscroll-behavior: auto;
+  touch-action: pan-y;
+}
+.vera-mermaid-viewport:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
+.vera-mermaid-viewport[data-vera-mermaid-pannable="horizontal"] { cursor: grab; overscroll-behavior-x: contain; }
+.vera-mermaid-viewport[data-vera-mermaid-pannable="vertical"],
+.vera-mermaid-viewport[data-vera-mermaid-pannable="both"] {
+  cursor: grab;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.vera-mermaid-viewport[data-vera-mermaid-panning="true"] { cursor: grabbing; user-select: none; }
+.vera-mermaid-canvas { min-width: 0; margin-inline: auto; }
+.vera-mermaid-svg { display: flex; width: 100%; height: 100%; min-width: 0; justify-content: center; }
+.vera-mermaid-svg > svg {
+  display: block;
+  width: 100%;
+  max-width: none !important;
+  height: 100%;
+  overflow: visible;
+}
+/* Legal square (DESIGN.md §6): the expanded diagram fills its viewport with
+   margin 0 on every side, so it is full-bleed rather than a card that lost its
+   corners. The collapsed state above keeps its radius. */
+.vera-mermaid-diagram-expanded {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0 !important;
+  border: 0;
+  border-radius: 0;
+}
+.vera-mermaid-diagram-expanded .vera-mermaid-toolbar {
+  padding-left: max(var(--space-3), var(--vera-titlebar-area-x, 0px));
+  padding-right: calc(var(--space-1) + var(--vera-titlebar-overlay-right-width, 0px));
+}
+.vera-mermaid-diagram-expanded .vera-mermaid-actions { -webkit-app-region: no-drag; }
+.vera-mermaid-diagram-expanded .vera-mermaid-viewport { min-height: 0; flex: 1 1 auto; }
+.vera-mermaid-dialog { -webkit-app-region: no-drag; }
+.vera-mermaid-source {
+  max-height: min(40%, 320px);
+  flex: 0 1 auto;
+  overflow: auto;
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  border-top: 1px solid var(--border);
+}
+.vera-mermaid-fallback { display: grid; gap: var(--space-1-5); }
+.vera-mermaid-fallback-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.vera-mermaid-status {
+  font: var(--vera-text-supporting);
+  color: var(--muted-foreground);
+}
+
+@container (max-width: 520px) {
+  .vera-mermaid-title { display: none; }
+}
+
+@container (max-width: 360px) {
+  .vera-mermaid-diagram:not(.vera-mermaid-diagram-expanded) .vera-mermaid-zoom-actions { display: none; }
+}
+
+.vera-tool-output-panel { display: grid; gap: 8px; margin-top: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--foreground-3); }
+.vera-tool-output-command {
+  font: var(--vera-text-code);
+ display: block; min-width: 0; color: var(--foreground); font-variant-ligatures: none; white-space: pre-wrap; word-break: break-word; }
+/* The command reads as the surface's header, not as the first line of the
+   output: it keeps the foreground colour the body gives up, and a hairline
+   separates the two. The rule is on the row rather than the panel so a
+   command with nothing under it (a failed launch) does not end in a stray
+   line — the panel's own 8px gap supplies the space below. */
+.vera-tool-output-command-row { display: flex; min-width: 0; align-items: flex-start; gap: 8px; }
+.vera-tool-output-command-row:not(:last-child) { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.vera-tool-output-command-row .vera-tool-output-command { flex: 1 1 auto; }
+.vera-tool-output-command-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.vera-tool-output-command-copy { flex: 0 0 auto; }
+.vera-tool-output-command-copy[data-copy-feedback="pending"] { cursor: progress; }
+.vera-tool-output-command-copy[data-copy-feedback="copied"] { color: var(--link); }
+.vera-tool-output-command-copy[data-copy-feedback="failed"] { color: var(--destructive); }
+.vera-tool-output-body {
+  font: var(--vera-text-code);
+ max-height: 256px; margin: 0; overflow-y: auto; color: var(--muted-foreground); font-variant-ligatures: none; scroll-behavior: auto; white-space: pre-wrap; word-break: break-word; }
+.vera-tool-output-note {
+  font: var(--vera-text-body);
+ margin: 0; color: var(--muted-foreground); }
+.vera-tool-output-wrap { min-width: 0; overflow-wrap: anywhere; }
+.vera-tool-output-destructive { color: var(--destructive); }
+.vera-tool-output-warning { color: var(--warning-text, var(--info-text)); }
+.vera-tool-output-warning-border { border-color: oklch(from var(--warning) l c h / 0.32); }
+.vera-tool-output-destructive-border { border-color: oklch(from var(--destructive) l c h / 0.28); }
+.vera-tool-output-stack { display: flex; min-width: 0; flex-direction: column; gap: 6px; margin-top: 4px; }
+.vera-pty-shell { gap: 0; overflow: hidden; padding: 0; }
+.vera-pty-shell-header { display: flex; min-width: 0; align-items: center; padding: 10px 12px 4px; }
+.vera-pty-shell-title {
+  font: var(--vera-text-label);
+ color: var(--foreground-secondary); }
+.vera-pty-shell-body { display: grid; min-width: 0; gap: 8px; padding: 6px 12px; }
+.vera-pty-shell-footer {
+  font: var(--vera-text-body);
+ display: flex; min-height: 32px; align-items: center; justify-content: flex-end; gap: 6px; padding: 4px 12px 10px; color: var(--muted-foreground); }
+.vera-pty-terminal-body { overflow: auto; white-space: pre; word-break: normal; }
+
+.vera-web-result { display: grid; gap: 8px; }
+.vera-web-result-header { display: grid; gap: 2px; }
+.vera-web-result-header strong {
+  font: var(--vera-text-heading-4);
+ color: var(--foreground); }
+.vera-web-result-header small,
+.vera-web-result-list small {
+  font: var(--vera-text-body);
+ color: var(--muted-foreground); }
+.vera-web-result-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.vera-web-result-list li { display: grid; gap: 2px; }
+.vera-web-result-list a {
+  font: var(--vera-text-label);
+ color: var(--link); }
+.vera-web-result-list p {
+  font: var(--vera-text-body);
+ margin: 0; color: var(--foreground-secondary); }
+.vera-web-result-error { gap: 6px; }
+.vera-web-result-error-message,
+.vera-web-result-repair {
+  font: var(--vera-text-body);
+ margin: 0; }
+.vera-web-result-error-message { color: var(--destructive); }
+.vera-web-result-repair { color: var(--muted-foreground); }
+.vera-tool-call-detail { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+/* A CodeBlock title (a file path, a result headline) sits at the same tier as
+   the command header beside it. Astryx hard-codes that title to the supporting
+   tier, which is 12px against the block's own 14px code — rebinding the role
+   token reaches it through inheritance, the same move chat-message.css makes
+   on the tool and reasoning rows. Only the size: `medium` on a header is
+   Astryx's intent and the surface command's foreground colour carries the same
+   weight of emphasis without it. */
+.vera-tool-call-detail .astryx-codeblock {
+  /* Geist Mono ligates `--`, `!==` and friends into single glyphs that sit
+     outside the cell they started in, so a `---` line looked like it had
+     escaped the block's left edge — measured, its box starts on the same x as
+     every other line. The product's own wells all disable this; Astryx's
+     CodeBlock does not, and tool output is transcript text where the literal
+     characters are the point. */
+  font-variant-ligatures: none;
+  --text-supporting-size: var(--text-code-size);
+  /* Unitless, so it has to move with the size: left at the supporting leading
+     it would multiply the larger size into a 23px line box and give the header
+     a rhythm no other row in the panel has. */
+  --text-supporting-leading: var(--text-code-leading);
+}
+/* A headerless CodeBlock floats its copy button over the viewport's top-right
+   corner, and a long unbroken first line — a vera://archive URI, a long
+   command — runs straight under it (markdown avoids this by always giving the
+   block a header toolbar; tool wells stay quiet on purpose). Reserve the
+   button's footprint with a float on the first line so wrapped text flows
+   around the corner instead of colliding. On the line div, not <code>: 100+
+   line blocks wrap lines in content-visibility chunks whose layout containment
+   would keep an outer float from shortening their line boxes. The lengths are
+   the button's geometry, not tunables: the 28px button inset spacing-2 (8px)
+   ends 20px past the code's spacing-4 (16px) inline padding — plus an 8px gap
+   — and its bottom edge sits 36px − spacing-3 (12px) = 24px below the first
+   line's top. Tool wells never enable line numbers, so the numbered-gutter
+   ::before cannot collide here. */
+.vera-tool-call-detail .astryx-codeblock:not(:has(.astryx-codeblock-header)) [data-line="1"]::before {
+  content: '';
+  float: inline-end;
+  width: 28px;
+  height: 24px;
+}
+/* The headered variant has the same collision inside its header row: the
+   title (often a long unbroken vera://archive URI headline) is a flex span
+   with white-space: pre and visible overflow, so it runs straight under the
+   header's copy button — and headerCompact draws no divider, so the title
+   reads as the well's first content line while colliding like an overlay.
+   Ellipsize it inside the title slot the header already sizes (flex: 1,
+   min-width: 0). display: block because a flex container will not ellipsize
+   its anonymous text; tool wells never render the collapsible chevron that
+   the flex display exists for. white-space stays `pre`, not nowrap: both
+   satisfy text-overflow's no-wrap requirement, but nowrap would collapse
+   runs of spaces — and a title is often a literal path or command where
+   `report  final.txt` and `report final.txt` are different names, with the
+   title as their only display (the copy button copies the body). */
+.vera-tool-call-detail .astryx-codeblock-header .astryx-codeblock-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.vera-tool-output-chunk { display: contents; }
+.vera-tool-output-chunk-stderr { color: var(--destructive); }
+.vera-tool-output-chunk-redacted { opacity: 0.65; }
+.vera-tool-output-redacted { display: inline; margin-left: 2px; color: var(--warning-text, var(--info-text)); }
+.vera-sandbox-blocked-banner,
+.vera-requires-bypass-banner { margin-bottom: 10px; }
+.vera-sandbox-blocked-description {
+  font: var(--vera-text-supporting);
+ display: flex; flex-direction: column; gap: 4px; white-space: pre-wrap; word-break: break-word; }
+.vera-sandbox-blocked-error {
+  font: var(--vera-text-supporting);
+ }
+.vera-sandbox-blocked-copy { align-self: start; }
+.vera-sandbox-blocked-copy[data-pending="true"] { cursor: progress; }
+.vera-sandbox-blocked-copy[data-copy-feedback="copied"] { border-color: oklch(from var(--accent) l c h / 0.35); color: var(--link); }
+.vera-sandbox-blocked-copy[data-copy-feedback="failed"] { border-color: oklch(from var(--destructive) l c h / 0.35); color: var(--destructive); }
+.vera-turn-status-icon { flex: 0 0 auto; }
+
+.vera-turn-aborted-marker,
+.vera-turn-host-origin {
+  font: var(--vera-text-supporting);
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  margin-inline: 0;
+  border-radius: var(--radius-control);
+}
+
+.vera-turn-aborted-marker {
+  gap: var(--space-1);
+  margin-block: var(--space-0-5) var(--space-1);
+  padding: var(--space-0-5) var(--space-1-5);
+  background: var(--foreground-5);
+  color: var(--foreground-secondary);
+  font-style: italic;
+}
+
+.vera-turn-aborted-marker em { font-style: italic; }
+
+.vera-turn-host-origin {
+  align-self: flex-end;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+  padding: var(--space-0-5) var(--space-1-5);
+  background: var(--foreground-5);
+  color: var(--muted-foreground);
+}
+
+/* Astryx `Banner` paints the failed-turn surface; this only sets the block
+   rhythm between it and the timeline entry above it. */
+.vera-turn-failed-banner { margin-block: var(--space-1) var(--space-0-5); }
+
+.vera-turn-lineage-row,
+.vera-turn-footer {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-0-5);
+}
+
+.vera-turn-lineage-row {
+  margin-top: var(--space-0-5);
+  margin-bottom: var(--space-1);
+  opacity: 0.82;
+}
+
+.vera-turn-lineage-row-reverse { margin-top: var(--space-1); }
+
+.vera-turn-lineage-badge {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: oklch(from var(--foreground) l c h / 0.05);
+  color: var(--muted-foreground);
+}
+
+.vera-turn-lineage-badge[data-direction="forward"] {
+  background: oklch(from var(--info) l c h / 0.06);
+  color: oklch(from var(--info-text) calc(l - 0.06) c h);
+}
+
+.vera-turn-lineage-badge[data-direction="reverse"] {
+  background: oklch(from var(--brand-deep) l c h / 0.06);
+  color: oklch(from var(--brand-deep) calc(l - 0.04) c h);
+}
+
+.vera-turn-footer {
+  margin-top: var(--space-0-5);
+  padding: 0;
+  opacity: 0;
+  transition: opacity var(--duration-quick) var(--ease-out-strong);
+}
+
+.vera-assistant-answer:hover .vera-turn-footer,
+.vera-turn-footer:focus-within { opacity: 1; }
+
+.vera-turn-footer-action {
+  border: 0;
+  border-radius: var(--radius-surface);
+  color: var(--muted-foreground);
+}
+
+.vera-turn-footer-action[data-pending="true"] {
+  cursor: progress;
+  opacity: 0.78;
+}
+
+.vera-turn-footer-action[aria-disabled="true"][data-pending="true"] { opacity: 0.78; }
+.vera-turn-footer-action[data-copy-feedback="copied"] { color: var(--link); }
+.vera-turn-footer-action[data-copy-feedback="failed"] { color: var(--destructive); }
+
+.vera-overlay-preview {
+  font: var(--vera-text-supporting);
+  max-height: 180px;
+  margin: var(--space-1) 0 0;
+  overflow: auto;
+  font-variant-ligatures: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.vera-overlay-close { justify-self: end; }
+.vera-tool-diff,
+.vera-tool-terminal {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  border-radius: var(--radius-surface);
+  background: var(--background);
+  box-shadow: var(--ring-soft);
+  white-space: normal;
+}
+.vera-tool-diff-paths,
+.vera-tool-terminal-head {
+  font: var(--vera-text-supporting);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--foreground-2);
+}
+.vera-tool-terminal-head { align-items: center; font-variant-ligatures: none; }
+.vera-tool-diff-paths code { color: var(--foreground-secondary); background: transparent; }
+.vera-tool-diff-body {
+  font: var(--vera-text-supporting);
+  max-height: 320px;
+  margin: 0;
+  padding-block: var(--space-1);
+  overflow: auto;
+  font-variant-ligatures: none;
+  white-space: pre;
+  word-break: normal;
+}
+/* Only the chat consumer moved into `.vera-tool-output-panel`, where the diff
+   sits beside a command on the code tier and a 12px body next to 14px reads as
+   a different kind of text. `vera-desktop`'s artifact pane still draws this as
+   a standalone card at the supporting tier its container asks for, so the tier
+   belongs to the panel, not to the shared class. */
+.vera-tool-output-panel .vera-tool-diff-body {
+  font: var(--vera-text-code);
+  /* The `font` shorthand resets `font-variant-ligatures`, and this rule
+     outranks the `none` the shared class declares — so the panel's diff was
+     the one code surface in the app rendering `===` as `⩶` and `=>` as `⇒`.
+     Every other `font: var(--vera-text-code)` rule restates it for the same
+     reason; this one had not. */
+  padding-block: 0;
+  font-variant-ligatures: none;
+}
+.vera-tool-diff-line { display: block; padding-inline: var(--space-2); white-space: pre; }
+.vera-tool-diff-gutter {
+  display: inline-block;
+  box-sizing: content-box;
+  text-align: right;
+  padding-right: var(--space-2);
+  margin-right: var(--space-1);
+  border-right: 1px solid var(--border);
+  color: var(--muted-foreground);
+  user-select: none;
+}
+/* The marker column: two character cells, the sign and a blank, so an
+   addition's code starts in the same place as the context line above it and
+   the sign is not crowding the first token. `ch` rather than a px gap because
+   this sits in a monospace body — one more cell keeps the code on the same
+   grid the file itself is written on, where 4px would leave it between two.
+   The column keeps the line's tint colour — the sign is what the colour is
+   naming — while `.vera-tool-diff-code` hands the code back to syntax
+   colouring. Every row gets the cell, including the markerless ones: a
+   `\ No newline at end of file` that hugged column 0 while the code beside it
+   did not was the same misalignment on a different row. */
+.vera-tool-diff-marker {
+  display: inline-block;
+  width: 2ch;
+}
+/* Neutral base under the `astryx-token-*` spans. Without it an added line's
+   uncoloured text would stay green and a deleted line's red, which is the
+   flat single-tint reading the tokens exist to break up; the row's background
+   tint and its marker carry add/del on their own.
+
+   This is also what brings context lines up from `--foreground-secondary` to
+   full foreground, which is deliberate rather than collateral: once a context
+   line's keywords and strings are syntax-coloured, dimming only the text
+   between them reads as damage, not as de-emphasis. The row's flat background
+   is what says "unchanged" now. */
+.vera-tool-diff-code { color: var(--foreground); }
+.vera-tool-diff-line[data-line="meta"] .vera-tool-diff-code { color: inherit; }
+.vera-tool-diff-line[data-line="add"] { background: oklch(from var(--success) l c h / 0.1); color: var(--success-text); }
+.vera-tool-diff-line[data-line="del"] { background: oklch(from var(--destructive) l c h / 0.1); color: var(--destructive); }
+.vera-tool-diff-line[data-line="hunk"] {
+  font: var(--vera-text-heading-5);
+ background: oklch(from var(--accent) l c h / 0.08); color: var(--foreground-secondary); }
+.vera-tool-diff-line[data-line="meta"] { color: var(--muted-foreground); }
+.vera-tool-diff-line[data-line="ctx"] { color: var(--foreground-secondary); }
+.vera-tool-terminal-cwd { color: var(--muted-foreground); background: transparent; }
+.vera-tool-terminal-cmd {
+  font: var(--vera-text-heading-5);
+ min-width: 0; flex: 1 1 auto; overflow: hidden; background: transparent; color: var(--foreground); text-overflow: ellipsis; white-space: nowrap; }
+/* Pinned like every other pill in the scan, even though the whole
+   `.vera-tool-terminal-*` family is currently unreachable:
+   `previewVariants({part: 'terminal-*'})` has no call site — `TerminalPreview`
+   renders `vera-tool-output-stack` / `ShellOutputBody` / `ToolCodeBlock`
+   instead. Deleting the family is its own change. */
+.vera-tool-terminal-exit {
+  font: var(--vera-text-heading-5);
+ height: var(--h-control-sm); display: inline-flex; align-items: center; white-space: nowrap; padding: 1px var(--space-1-5); border-radius: var(--radius-pill); background: var(--foreground-5); color: var(--foreground-secondary); letter-spacing: var(--tracking-wide); }
+.vera-tool-terminal-exit[data-ok="true"] { background: oklch(from var(--success) l c h / 0.14); color: var(--success); }
+.vera-tool-terminal-exit[data-ok="false"] { background: oklch(from var(--destructive) l c h / 0.14); color: var(--destructive); }
+.vera-tool-terminal-empty {
+  font: var(--vera-text-supporting);
+ margin: 0; padding: var(--space-2); color: var(--muted-foreground); font-style: italic; }
+.vera-tool-terminal-stream {
+  font: var(--vera-text-supporting);
+ max-height: 180px; margin: 0; padding: var(--space-1-5) var(--space-2); overflow: auto; font-variant-ligatures: none; white-space: pre-wrap; word-break: break-word; }
+.vera-tool-terminal-stream[data-stream="stdout"] { color: var(--foreground); }
+.vera-tool-terminal-stream[data-stream="stderr"] { border-top: 1px solid var(--border); background: oklch(from var(--destructive) l c h / 0.04); color: var(--destructive); }
+.vera-tool-terminal-truncated-note {
+  font: var(--vera-text-supporting);
+ display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border-top: 1px solid var(--border); background: oklch(from var(--warning) l c h / 0.06); color: var(--foreground-secondary); }
+.vera-tool-terminal-truncated-note > span { min-width: 0; }
+.vera-tool-terminal-copy,
+.vera-agent-preview-copy { flex: 0 0 auto; }
+.vera-tool-terminal-copy[data-pending="true"],
+.vera-agent-preview-copy[data-pending="true"] { cursor: progress; }
+.vera-tool-terminal-copy[data-copy-error="true"],
+.vera-agent-preview-copy[data-copy-error="true"] { border-color: oklch(from var(--destructive) l c h / 0.35); color: var(--destructive); }
+
+.vera-agent-preview {
+  font: var(--vera-text-supporting);
+ display: grid; gap: var(--space-2-5); padding: var(--space-2-5) var(--space-3); border: 1px solid var(--foreground-10); border-radius: var(--radius-surface); background: var(--foreground-3); white-space: normal; }
+.vera-agent-preview[data-ok="false"],
+.vera-agent-preview[data-status="failed"],
+.vera-agent-preview[data-status="cancelled"] { border-color: oklch(from var(--destructive) l c h / 0.22); }
+.vera-agent-preview-head { display: grid; gap: var(--space-0-5); padding-bottom: var(--space-1-5); border-bottom: 1px solid var(--foreground-10); }
+.vera-agent-preview-head strong {
+  font: var(--vera-text-heading-4);
+ min-width: 0; overflow: hidden; color: var(--foreground); text-overflow: ellipsis; white-space: nowrap; }
+.vera-agent-preview-head small,
+.vera-agent-preview-section small,
+.vera-agent-preview-meta dt {
+  font: var(--vera-text-supporting);
+ color: var(--muted-foreground); letter-spacing: var(--tracking-wider); text-transform: uppercase; }
+.vera-agent-preview-summary-line,
+.vera-agent-preview-section-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.vera-agent-preview-summary-line small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vera-agent-preview-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1-5); margin-top: var(--space-1); }
+.vera-agent-preview-message {
+  font: var(--vera-text-supporting);
+ padding: var(--space-2) var(--space-2-5); border-radius: var(--radius-control); background: oklch(from var(--destructive) l c h / 0.07); color: var(--destructive); }
+.vera-agent-preview-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 0; }
+.vera-agent-preview-meta > div { display: grid; min-width: 0; gap: var(--space-0-5); }
+.vera-agent-preview-meta dd {
+  font: var(--vera-text-supporting);
+ min-width: 0; margin: 0; overflow: hidden; color: var(--foreground-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.vera-agent-preview-section { display: grid; gap: var(--space-1-5); }
+.vera-agent-preview-section > strong,
+.vera-agent-preview-section-head > strong {
+  font: var(--vera-text-heading-5);
+ min-width: 0; color: var(--foreground); }
+.vera-agent-preview-section ul { display: grid; gap: var(--space-1-5); margin: 0; padding: 0; list-style: none; }
+.vera-agent-preview-section li { display: grid; min-width: 0; gap: var(--space-0-5); padding-block: var(--space-1-5); border-top: 1px solid var(--foreground-5); }
+.vera-agent-preview-section li:first-child { padding-top: 0; border-top: 0; }
+.vera-agent-preview-section code {
+  font: var(--vera-text-supporting);
+ min-width: 0; overflow: hidden; background: transparent; color: var(--foreground); text-overflow: ellipsis; white-space: nowrap; }
+.vera-agent-preview-section p,
+.vera-agent-preview-section span {
+  font: var(--vera-text-supporting);
+ margin: 0; color: var(--foreground-secondary); white-space: pre-wrap; word-break: break-word; }
+.vera-agent-preview-copy[data-copied="true"] { border-color: oklch(from var(--accent) l c h / 0.35); color: var(--link); }
+
+.vera-web-search-preview { display: grid; gap: var(--space-2); padding: var(--space-2-5) var(--space-3); border: 1px solid var(--foreground-10); border-radius: var(--radius-surface); background: var(--foreground-3); }
+.vera-web-search-preview > header { display: flex; flex-direction: column; gap: var(--space-0-5); padding-bottom: var(--space-1-5); border-bottom: 1px solid var(--foreground-10); }
+.vera-web-search-preview > header strong {
+  font: var(--vera-text-heading-4);
+ color: var(--foreground); }
+.vera-web-search-preview > header small,
+.vera-web-search-preview li small {
+  font: var(--vera-text-supporting);
+ color: var(--muted-foreground); letter-spacing: var(--tracking-wider); text-transform: uppercase; }
+.vera-web-search-preview ul { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.vera-web-search-preview li { display: grid; gap: var(--space-0-5); padding-block: var(--space-2); border-top: 1px solid var(--foreground-5); }
+.vera-web-search-preview li:first-child { padding-top: 0; border-top: 0; }
+.vera-web-search-preview a {
+  font: var(--vera-text-heading-4);
+ color: var(--foreground); text-decoration: none; }
+.vera-web-search-preview a:hover,
+.vera-web-search-preview a:focus-visible { text-decoration: underline; }
+.vera-web-search-preview li p {
+  font: var(--vera-text-supporting);
+ margin: 0; color: var(--foreground-secondary); white-space: pre-wrap; word-break: break-word; }
+.vera-web-search-error { border-color: color-mix(in oklab, var(--destructive-text) 32%, var(--foreground-10)); background: color-mix(in oklab, var(--destructive-text) 8%, var(--foreground-3)); }
+.vera-web-search-error-message,
+.vera-web-search-error-repair {
+  font: var(--vera-text-supporting);
+ margin: 0; white-space: pre-wrap; word-break: break-word; }
+.vera-web-search-error-message { color: var(--destructive-text); }
+.vera-web-search-error-repair { color: var(--foreground-secondary); }
+
+.vera-load-tool-preview {
+  display: grid;
+  grid-template-columns: var(--space-8) minmax(0, 1fr);
+  gap: var(--space-2-5);
+  align-items: start;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-2) var(--space-2-5);
+}
+.vera-load-tool-preview p { margin: 0; }
+.vera-load-tool-icon {
+  display: grid;
+  width: var(--space-8);
+  height: var(--space-8);
+  place-items: center;
+  border-radius: var(--radius-element);
+  color: var(--foreground-secondary);
+  background: var(--foreground-5);
+}
+.vera-load-tool-summary {
+  min-width: 0;
+  padding-top: var(--space-0-5);
+}
+.vera-load-tool-title {
+  font: var(--vera-text-heading-5);
+}
+.vera-load-tool-description {
+  font: var(--vera-text-supporting);
+  margin-top: var(--space-0-5) !important;
+  color: var(--foreground-secondary);
+  overflow-wrap: anywhere;
+}
+.vera-load-tool-count {
+  font: var(--vera-text-supporting);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1) !important;
+  color: var(--muted-foreground);
+}
+.vera-load-tool-separator {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+.vera-load-tool-technical {
+  grid-column: 1 / -1;
+  margin-left: calc(var(--space-8) + var(--space-2-5));
+  color: var(--muted-foreground);
+}
+.vera-load-tool-technical > summary {
+  width: fit-content;
+  padding: var(--space-0-5) 0;
+  font: var(--vera-text-supporting);
+  cursor: pointer;
+}
+.vera-load-tool-technical > summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring);
+  border-radius: var(--radius-control);
+}
+.vera-load-tool-technical dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-soft);
+  font: var(--vera-text-supporting);
+}
+.vera-load-tool-technical:not([open]) > dl {
+  display: none;
+}
+.vera-load-tool-technical dt {
+  color: var(--muted-foreground);
+}
+.vera-load-tool-technical dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground-secondary);
+}
+.vera-load-tool-technical code {
+  font: var(--vera-text-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Turn-footer action rings go inset (T5 geometry probe): the Astryx chat
+   layout's scrollport clips an outward ring on the first visible row's
+   actions. Same idiom as the titlebar strip and workbar launcher. The
+   layout's own scroll-to-bottom control has the same clip inside vendor
+   DOM — upstream item, not fixable from product CSS. */
+.vera-turn-footer-action:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring);
+}

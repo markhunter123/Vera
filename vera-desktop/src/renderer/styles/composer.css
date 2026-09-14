@@ -1,0 +1,598 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* Composer — outer container, controls, pickers, tool buttons, send/workspace/branch/streaming. Composer block merged in from tool-output.css (was misplaced there) — issue #546 PR3. Runtime interaction prompt styles live in interaction-prompts.css. */
+.composer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2) var(--space-6) var(--space-2);
+  /* PR-GRAY-CARD-LIFT-5 (WAWQAQ msg `d4277aba` round 3): the composer
+     outer used to paint a vertical white-fade over `--background`,
+     designed for the older parchment shell where the page bg was
+     warm-white. Now that `--background` itself is pure white and the
+     shell is a visibly gray `--surface-canvas`, the composer outer
+     painted itself white-on-white, defeating the gray-plate / white-
+     card lift. Switch to transparent so the gray plate shows around
+     the composer card. */
+  background: transparent;
+}
+
+.vera-composer-astryx {
+  width: min(var(--vera-reading-measure), 100%);
+  max-width: var(--vera-reading-measure);
+}
+
+.vera-composer-queue {
+  width: min(var(--vera-reading-measure), calc(100% - (2 * var(--space-6))));
+  max-width: var(--vera-reading-measure);
+  margin: 0 auto var(--space-1);
+  padding: var(--space-1);
+  box-sizing: border-box;
+  border-radius: var(--radius-chat);
+  background: var(--background-elevated);
+  box-shadow: inset 0 0 0 var(--border-width-hairline) var(--border);
+  /* Concentric with the plate, mirroring what ChatComposer derives for its
+     own footer buttons: max(--radius-element, radius - padding). The plate
+     sits outside the card, so the row ghost buttons must read it here. */
+  --_button-radius: max(var(--radius-element), calc(var(--radius-chat) - var(--spacing-3)));
+}
+
+.vera-composer-queue-list {
+  min-width: 0;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.vera-composer-queue-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vera-composer-queue-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  flex: 0 0 auto;
+}
+
+.vera-composer-queue-edit {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: var(--border-width-hairline) solid var(--border-strong);
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  resize: vertical;
+}
+
+.vera-composer-queue-grip {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--muted-foreground);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.vera-composer-queue-list li:hover .vera-composer-queue-grip,
+.vera-composer-queue-grip:focus-visible {
+  opacity: 1;
+}
+
+.vera-composer-queue-grip:active {
+  cursor: grabbing;
+}
+
+@media (max-width: 640px) {
+  .vera-composer-queue {
+    width: min(var(--vera-reading-measure), calc(100% - (2 * var(--space-3))));
+  }
+
+  .vera-composer-queue-actions {
+    gap: 0;
+  }
+}
+
+/* Row-flow, not the old stacked column: image thumbnails and file/quote
+   chips share one wrapping row. `width: 100%` is what makes the wrap real:
+   as a flex item of Astryx's drawer content this group would otherwise size
+   to max-content, run past the drawer edge, and get clipped by the drawer
+   root's overflow:hidden — the drawer must grow DOWN, never rightward. */
+.vera-composer-context-drawer {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex-direction: row;
+  padding: var(--space-1) var(--space-3) var(--space-2);
+}
+
+/* Astryx ChatComposerDrawer wraps its content in a display:grid whose single
+   implicit column sizes to the content's max-content contribution — with a
+   long chip row that resolves WIDER than the grid (measured: 896px column in
+   a 648px grid), so the row wrapped against a phantom width and everything
+   past the drawer's right edge was clipped. Pin the column to the grid's own
+   width; the group above then wraps against the real edge. The content region
+   is the child carrying the disclosure id (aria-controls target). */
+.vera-composer-astryx .astryx-chat-composer-drawer > div[id] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The collapse toggle is a full-width 20px band whose only visible affordance
+   is a 20×2px pill — its aria-label («收起附加内容» / «展开附加内容») was
+   unreadable for sighted users, and a native `title` needs a ~1s motionless
+   hover that a thin band rarely gets. Surface the label as an instant CSS
+   tooltip instead: `attr(aria-label)` tracks the live attribute, so the text
+   flips with the collapse state and stays localized with no JS.
+
+   Placement is the hard constraint: the drawer root clips its own box
+   (overflow:hidden for the collapse animation), so the bubble can't rise
+   above the band, and the input card paints ABOVE the drawer (body z-index 2
+   vs drawer 1 — that overlap is the card's design), so anything hanging
+   below the collapsed band gets covered. The one strip clear of both is the
+   band's own height — within it the bubble tracks the pointer horizontally
+   (--vera-drawer-tooltip-x, set by the drawer's onPointerMove in
+   composer.tsx), falling back to beside the pill for keyboard focus. */
+.vera-composer-astryx .astryx-chat-composer-drawer > [role='button'][aria-controls] {
+  position: relative;
+}
+
+.vera-composer-astryx .astryx-chat-composer-drawer > [role='button'][aria-controls]::after {
+  /* local: --vera-drawer-tooltip-x — bubble x within the band, written by
+     the drawer's onPointerMove in composer.tsx (cleared on pointer leave);
+     the fallback beside the pill serves keyboard focus. */
+  content: attr(aria-label);
+  position: absolute;
+  top: 50%;
+  left: var(--vera-drawer-tooltip-x, calc(50% + 20px));
+  transform: translateY(-50%);
+  padding: 3px 8px;
+  border-radius: var(--radius-control);
+  /* Astryx's fixed tooltip pair (same as Thumbnail's remove scrim): legible
+     in both themes without borrowing surface tokens for text. 11px matches
+     Astryx's own tooltip type — a lockstep exception, not the product scale. */
+  background-color: var(--color-overlay);
+  color: var(--color-on-dark);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--duration-quick) var(--ease-out-strong);
+  z-index: var(--z-tooltip);
+}
+
+.vera-composer-astryx .astryx-chat-composer-drawer > [role='button'][aria-controls]:hover::after,
+.vera-composer-astryx .astryx-chat-composer-drawer > [role='button'][aria-controls]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Staged attachments share the quote chips' Token rhythm (maintainer
+   decision on the #2367 follow-up); the drawer stays a flat chip row. Cap
+   the chip and let Astryx Token's own ellipsis truncate, so a full
+   z-library book title cannot span the drawer — the full name rides the
+   chip's hover Tooltip instead. */
+.vera-composer-context-drawer .vera-composer-attachment-token {
+  max-width: min(280px, 100%);
+}
+
+.vera-composer-input {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.vera-composer-left-controls {
+  display: flex;
+  align-items: center;
+  /* PR-REFERENCE-PIXEL-8 (WAWQAQ msg `f79de85f` round 8): reference implementation's
+     bundle uses gap values centered on 4-8px (extracted from
+     `globals-UfMzAdiO.css` — 4px is the most common gap, 12px never
+     appears as a toolbar gap). Vera's 12px composer toolbar gap
+     read as too loose vs reference implementation's tighter density. 8px keeps
+     individual controls separable while pulling them into one
+     coherent toolbar group. */
+  gap: var(--space-1-5);
+  flex-wrap: wrap;
+}
+
+/* Shrinkable so the `flex-wrap: wrap` above can actually engage. At
+   `flex: 0 0 auto` this box sizes to max-content, which means it never has a
+   width to wrap inside — it just overflows, and the overflow runs under the
+   send button and past the card's right edge. That stayed invisible while the
+   row held four controls; the project picker adds to it and a 480px window has
+   nowhere to put the overflow. `min-width: 0` because the default
+   `auto` floor would keep the same overflow for a long model name. */
+.vera-composer-left-controls {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Quiet footer: ＋ and permission are both ghost icon buttons. */
+.vera-composer-left-controls .permissionModeIcon,
+.vera-composer-left-controls .vera-composer-plus-menu {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Cursor: product-wide native-cursor.css (vera.legacy) owns default vs pointer. */
+
+/* Astryx sm list density: DropdownMenuItem + Selector options use
+   padding-block: var(--spacing-1) (4px) when size=sm. The two selectable item
+   types only size their glyph from menuSize and never apply itemSizeStyles, so
+   they stay on Item balanced (8px) and their rows look taller than + / model.
+   Quiet menus force the sm block pad so all three composer popouts share one
+   ladder. Use product --space-1 (same 4px step as Astryx --spacing-1).
+   Upstream should wire itemSizeStyles into both; drop this when it does. */
+.vera-composer-quiet-menu [role="menuitemradio"],
+.vera-composer-quiet-menu [role="menuitemcheckbox"] {
+  padding-block: var(--space-1);
+}
+
+/* The ＋ menu's mode rows carry the mark Astryx draws for a chosen option — a
+   check when chosen, nothing when not — which is what its own Selector puts on
+   a selected option, and what a menu of otherwise identical rows needs: no
+   column of empty boxes and circles ahead of the labels, and the mode icons on
+   the same x as the action rows above. Both selectable item types draw their
+   own control at the row's start, so composer.tsx passes the check through
+   `endContent` and the controls are suppressed here.
+
+   `astryx-checkbox-indicator` and `astryx-radio-indicator` are the two
+   indicators' published theme targets (see their themeProps calls), not
+   internal classes. Scoped to the ＋ panel alone: nothing outside this menu is
+   touched.
+
+   Drop these rules and the `endContent` mark together once a selectable item
+   can choose its own indicator upstream. */
+.vera-composer-plus-panel [role="menuitemcheckbox"] .astryx-checkbox-indicator,
+.vera-composer-plus-panel [role="menuitemradio"] .astryx-radio-indicator {
+  display: none;
+}
+
+/* Astryx sizes the popover to its widest row (min-width:anchor-size, no max).
+   The model menu lost the 260px/56vw option-label cap with the Selector, so
+   the menu itself needs the ceiling: a long model name (BYOK catalogs love
+   `vendor/a-very-long-model-name`) must wrap inside the panel, never push it
+   off the window. Rows already wrap (Item has no nowrap) and the panel has
+   overflow-y:auto for the tall direction. */
+.vera-composer-quiet-menu {
+  max-width: min(320px, 92vw);
+}
+
+/* Model chip (static fallback) still owns its own quiet geometry. */
+.vera-composer-model-chip {
+  font: var(--vera-text-label);
+  /* #1879: was a bare 26px. It is NOT an Astryx component — `ModelChipStatic`
+     puts this class only on its inert `<span>` branch; the `onOpenSettings`
+     branch renders a `Button size="sm"` that carries no class at all
+     (chat-model-switcher.tsx). So nothing sizes this box but this rule, and
+     unpinning it measured 22px (the label role's 20px line box plus two
+     hairlines) against the 28px Selector beside it. `--h-control-md` resolves
+     to `--size-element-sm`, which is the token that Selector's own `size="sm"`
+     reads — so the two agree by deriving from one token rather than by two
+     product rules agreeing on a literal. */
+  height: var(--h-control-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: var(--border-width-hairline) solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+  max-width: min(180px, 28vw);
+  transition:
+    background-color var(--duration-base) var(--ease-out-strong),
+    color var(--duration-base) var(--ease-out-strong);
+}
+.vera-composer-model-chip:hover {
+  background: var(--state-hover-bg);
+  color: var(--foreground);
+  border-color: transparent;
+}
+
+/* Mode ON marks sit at the tail of the footer's left controls (#1897) —
+   session state, not context staged for the next send, so they no longer live
+   in the drawer.
+
+   Vera blue is the single product accent (DESIGN.md), and an active mode is
+   exactly what it is for; which mode a mark is comes from its icon, not a hue,
+   so all three share the one accent. The wash derives from currentColor so a
+   disabled mark dims both layers together.
+
+   `background-color`, never the `background` shorthand: the shorthand would
+   suppress the ghost button's hover and active overlays and leave the one way
+   out of a mode with no pointer feedback.
+   `flex: 0 0 auto` keeps a long model name from compressing the mark away. */
+.vera-composer-mode-button {
+  flex: 0 0 auto;
+  color: var(--accent);
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+/* Model + thinking pair lives in left-controls (after permission), not send. */
+.vera-composer-left-controls .vera-model-selection-controls {
+  min-width: 0;
+  max-width: min(420px, 52vw);
+}
+.vera-composer-left-controls .vera-model-switcher-trigger,
+.vera-composer-left-controls .vera-new-chat-model-selector {
+  min-width: 100px;
+  max-width: min(220px, 28vw);
+}
+
+.vera-composer-model-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vera-composer-model-status {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--destructive);
+  flex: 0 0 auto;
+}
+
+/* The active transcript and docked card meet at one boundary. Keeping the
+   outer composer's default top padding here exposes an extra strip of panel
+   background after the transcript viewport has already ended. */
+.mainColumn:not([data-home-surface="true"]) .composer {
+  padding-top: 0;
+}
+
+/* U3 no-model dead-end hint. Sits ABOVE the composer form (outside its box, so
+   it never touches the #740 constant footprint). Edged, not pill; quiet caption
+   text + one link-button into Settings · 模型. Theme-aware via tokens. Centered to the reading measure, matching the revision-notice layout. */
+.vera-composer-no-model-hint {
+  font: var(--vera-text-supporting);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: min(
+    var(--vera-reading-measure),
+    calc(100% - (2 * var(--space-6)) - (2 * var(--space-3)))
+  );
+  max-width: var(--vera-reading-measure);
+  margin: 0 auto var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  border: var(--border-width-hairline) solid var(--warning);
+  border-radius: var(--radius-control);
+  color: var(--foreground-secondary);
+}
+
+.vera-composer-no-model-hint-action {
+  font: var(--vera-text-supporting);
+  flex-shrink: 0;
+  color: var(--link);
+  text-decoration: none;
+  border-radius: var(--radius-control);
+}
+
+.vera-composer-no-model-hint-action:hover {
+  text-decoration: underline;
+}
+
+.vera-composer-no-model-hint-action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Edit-and-resend notice. A single quiet inline pill above the composer form,
+   matching the composer toolbar chip family (not a heavy info card). */
+.vera-composer-revision-notice {
+  font: var(--vera-text-supporting);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: min(
+    var(--vera-reading-measure),
+    calc(100% - (2 * var(--space-6)) - (2 * var(--space-3)))
+  );
+  max-width: var(--vera-reading-measure);
+  margin: 0 auto var(--space-1);
+  padding: 0 var(--space-1-5);
+  box-sizing: border-box;
+  /* #1879: was `height: 26px`, an off-ruler literal. The floor is arithmetic
+     under `border-box`: a 20px supporting line box plus two hairline borders
+     needs 22px, so `--h-control-sm` (24px) is the smallest tier that holds it
+     without clipping. Loses 2px. */
+  height: var(--h-control-sm);
+  border: var(--border-width-hairline) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--background-elevated);
+  color: var(--foreground-secondary);
+}
+
+.vera-composer-revision-notice > svg {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.vera-composer-revision-notice-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.vera-composer-revision-notice-detail {
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* #1879: the one site in this family where the old height was not merely
+   off-ruler but smaller than the line box it renders — measured, an 18px box
+   around a 20px line box, and `display: block` so the text was not centred
+   either. Nothing clipped (the 2px excess is half-leading, and there is no
+   `overflow: hidden` here), but a box shorter than its own line box has no
+   defensible height. `--h-control-xs` (20px) is that line box. Gains 2px. */
+.vera-composer-revision-notice-cancel {
+  font: var(--vera-text-supporting);
+  appearance: none;
+  flex: 0 0 auto;
+  height: var(--h-control-xs);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-1-5);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  transition: background-color var(--duration-base) var(--ease-out-strong), color var(--duration-base) var(--ease-out-strong);
+}
+
+.vera-composer-revision-notice-cancel:hover:not(:disabled) {
+  background: var(--state-hover-bg);
+  color: var(--foreground);
+}
+
+.vera-composer-revision-notice-cancel:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.vera-composer-revision-notice-cancel:disabled {
+  opacity: var(--opacity-disabled);
+}
+
+/* The project picker, last in the composer footer's send-context group. It is
+   rendered only while no session owns the composer — the project is a
+   session-creation parameter. See vera-ui/src/workspace-picker.tsx. */
+.vera-composer-workspace {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.vera-composer-workspace [role="menu"] {
+  max-width: min(360px, calc(100vw - var(--space-6)));
+  max-height: none;
+  overflow: visible;
+}
+
+.vera-workspace-picker-scroll {
+  max-height: min(360px, calc(100vh - var(--space-12)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--foreground-alpha-16) transparent;
+  scrollbar-width: thin;
+}
+
+.vera-workspace-picker-group + .vera-workspace-picker-group {
+  border-top: 1px solid var(--border);
+}
+
+.vera-workspace-picker-scroll + .vera-workspace-picker-actions {
+  border-top: 1px solid var(--border);
+}
+
+.vera-workspace-picker-group-label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--muted-foreground);
+  font: var(--vera-text-supporting);
+}
+
+.vera-workspace-picker-host-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--foreground-alpha-16);
+  color: var(--muted-foreground);
+  font: var(--vera-text-supporting);
+}
+
+.vera-workspace-picker-status {
+  font: var(--vera-text-supporting);
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+
+.remoteProjectDirectoryBody {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.remoteProjectDirectoryBreadcrumbs {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.remoteProjectDirectoryRoot,
+.remoteProjectDirectoryBreadcrumb {
+  color: var(--muted-foreground);
+}
+
+.remoteProjectDirectoryBreadcrumb::before {
+  margin-right: var(--space-1);
+  content: '/';
+}
+
+.remoteProjectDirectoryEntries {
+  display: grid;
+  gap: var(--space-1);
+  overflow-y: auto;
+}
+
+.remoteProjectDirectoryEntry {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.remoteProjectDirectoryError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}

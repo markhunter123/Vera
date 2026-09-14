@@ -1,0 +1,444 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import assert from 'node:assert/strict';
+import { fork, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { createServer, type Server } from 'node:http';
+import { connect, type Socket } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { TOOL_BOUNDARY_PROTOCOL_V1 } from '@vera/core/runtime-event';
+import { canonicalToolArgsHash } from '@vera/core/tool-args-identity';
+import type { AgentRunHeader } from '@vera/core/agent-run';
+import type { MessageContent } from '@vera/core/events';
+import type { ConnectionCatalogEntry } from '@vera/core/runtime-policy';
+import type { StoredMessage } from '@vera/core/session';
+import type { Task } from '@vera/core/task-ledger';
+import { isTerminalRuntimeEvent } from '@vera/core/runtime-event';
+import type { RuntimeEvent } from '@vera/core/runtime-event';
+import { buildTaskLedgerTools } from '@vera/runtime/task-ledger-tools';
+import {
+  buildRecoveredTerminalRuntimeEvent,
+  classifyTerminalRuntimeLedger,
+  commitTerminalRunWithRuntimeFact,
+} from '@vera/runtime/terminal-run-commit';
+import {
+  FAKE_ASK_USER_QUESTION_PROMPT,
+  FAKE_WAIT_FOR_STEERING_PROMPT,
+} from '@vera/runtime/test-only/fake-backend';
+import { type VeraTool, type VeraToolContext } from '@vera/runtime/tool-runtime';
+import {
+  openInteractiveExecutionStoresForRead,
+  openInteractiveExecutionStoresForWrite,
+} from '@vera/storage/execution-stores';
+import { openInteractiveRuntimePolicyStoresForWrite } from '@vera/storage/runtime-policy-stores';
+import {
+  resolveRootControlNamespace,
+  resolveStorageRoot,
+  tryAcquireInteractiveRootOwner,
+  tryAcquireInteractiveRootReader,
+  type StorageRootCapability,
+} from '@vera/storage/root-authority';
+import { openInteractiveTaskLedgerStoreForWrite } from '@vera/storage/task-ledger-authority';
+import {
+  connectRuntimeHost,
+  RuntimeHostOperationError,
+  RuntimeHostSubscriptionError,
+  type RuntimeHostConnection,
+  type RuntimeHostSessionSubscription,
+} from '../client/index.js';
+import {
+  decodeHostFrame,
+  RUNTIME_HOST_PROTOCOL_VERSION,
+  TASK_LEDGER_PAGE_MAX_ITEMS,
+  type ConnectionCatalogQueryResult,
+  type InteractionPendingSnapshot,
+  type SubscriptionFrame,
+  type TaskLedgerQueryResult,
+  type TaskLedgerRevision,
+  type TurnMessageSubmitInput,
+  type TurnSnapshot,
+} from '../protocol/index.js';
+import { SessionAdmissionGate } from '../server/session-admission-gate.js';
+import { HostTaskLedgerCoordinator } from '../server/task-ledger-coordinator.js';
+import { FramedTransport } from '../transport/framed-transport.js';
+
+import {
+  CONNECTION_EFFECT_MODEL_IDS,
+  PROCESS_TIMEOUT_MS,
+  SubscriptionProbe,
+  assertJsonLines,
+  attachment,
+  connectClient,
+  requireStartedTurn,
+  operationError,
+  quotedContent,
+  sendStartWithoutReadingResponse,
+  startConnectionEffectProvider,
+  userRuntimeContent,
+  waitForDurableMessageConflict,
+  waitForPendingInteraction,
+  waitForRunningTurn,
+  waitForTerminalTurn,
+  waitForTurn,
+  withExecutionRoot,
+  withTimeout,
+} from './fixtures/execution-host-suite.js';
+
+test('startup recovery rejects claimed graph Run lineage drift', async () => {
+  await withExecutionRoot(async (fixture) => {
+    await fixture.seedClaimedGraphRunLineageDrift();
+    await fixture.expectHostStartupFailure();
+    await fixture.assertOwnerAvailable();
+  });
+});
+
+test('retry after a discarded turn.start response reuses the durable semantic admission', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const turnId = randomUUID();
+    const text = 'response loss must not duplicate this Turn';
+    const dropped = await sendStartWithoutReadingResponse(host.endpoint, {
+      sessionId: fixture.sessionId,
+      turnId,
+      text,
+    });
+    const observer = await connectClient(fixture.root);
+    const committed = await waitForTurn(observer, fixture.sessionId, turnId);
+    dropped.abort();
+
+    const retried = requireStartedTurn(
+      await observer.request('turn.start', {
+        sessionId: fixture.sessionId,
+        turnId,
+        content: { text },
+      }),
+    );
+    assert.equal(retried.runId, committed.runId);
+    await assert.rejects(
+      () =>
+        observer.request('turn.start', {
+          sessionId: fixture.sessionId,
+          turnId,
+          content: { text: `${text} changed` },
+        }),
+      operationError('operation_conflict'),
+    );
+    const terminal = await waitForTerminalTurn(observer, fixture.sessionId, turnId);
+    assert.equal(terminal.status, 'completed');
+    await observer.close();
+
+    await fixture.killHost(host);
+    const successorHost = await fixture.startHost();
+    const successorClient = await connectClient(fixture.root);
+    assert.deepEqual(
+      requireStartedTurn(
+        await successorClient.request('turn.start', {
+          sessionId: fixture.sessionId,
+          turnId,
+          content: { text },
+        }),
+      ),
+      terminal,
+    );
+    const successorTurnId = randomUUID();
+    await successorClient.request('turn.start', {
+      sessionId: fixture.sessionId,
+      turnId: successorTurnId,
+      content: { text: 'successor must extend the recovered durable tip' },
+    });
+    await waitForTerminalTurn(successorClient, fixture.sessionId, successorTurnId);
+    await successorClient.close();
+    await fixture.stopHost(successorHost);
+
+    const ledger = await fixture.readTurn(turnId);
+    assert.equal(ledger.runs.length, 1);
+    assert.equal(ledger.userMessages.length, 1);
+    assert.equal(ledger.terminalEvents.length, 1);
+    const chain = await fixture.readAdmissionChain();
+    assert.deepEqual(
+      chain.map((admission) => admission.turnId),
+      [turnId, successorTurnId],
+    );
+    assert.equal(chain[1]?.previousRootTurnId, turnId);
+  });
+});
+
+test('startup recovery replays an admitted regenerate with its source lineage', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const firstHost = await fixture.startHost();
+    const first = await connectClient(fixture.root);
+    const sourceTurnId = randomUUID();
+    const regeneratedTurnId = randomUUID();
+    await first.request('turn.start', {
+      sessionId: fixture.sessionId,
+      turnId: sourceTurnId,
+      content: quotedContent('recover this regeneration'),
+    });
+    await waitForTerminalTurn(first, fixture.sessionId, sourceTurnId);
+    await first.close();
+    await fixture.stopHost(firstHost);
+
+    const admitted = await fixture.seedRegenerateAdmissionWithoutRun(
+      sourceTurnId,
+      regeneratedTurnId,
+    );
+    const successorHost = await fixture.startHost();
+    const successor = await connectClient(fixture.root);
+    const terminal = await waitForTerminalTurn(successor, fixture.sessionId, regeneratedTurnId);
+    assert.equal(terminal.runId, admitted.runId);
+    await successor.close();
+    await fixture.stopHost(successorHost);
+
+    const ledger = await fixture.readTurn(regeneratedTurnId);
+    assert.equal(ledger.runs.length, 1);
+    assert.equal(ledger.userMessages.length, 1);
+    assert.equal(ledger.runs[0]?.parentTurnId, sourceTurnId);
+    assert.equal(ledger.runs[0]?.regeneratedFromTurnId, sourceTurnId);
+  });
+});
+
+test('a fresh quoted Turn preserves durable and Runtime handoff content', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    const turnId = randomUUID();
+    const content = quotedContent('fresh quoted turn');
+
+    await client.request('turn.start', { sessionId: fixture.sessionId, turnId, content });
+    await waitForTerminalTurn(client, fixture.sessionId, turnId);
+    await client.close();
+    await fixture.stopHost(host);
+
+    const chain = await fixture.readAdmissionChain();
+    assert.equal(chain.length, 1);
+    assert.deepEqual(chain[0]?.normalizedInput, content);
+    const ledger = await fixture.readTurn(turnId);
+    assert.equal(ledger.userMessages.length, 1);
+    assert.deepEqual(ledger.userMessages[0]?.quotes, content.quotes);
+    assert.deepEqual(userRuntimeContent(ledger.runtimeEvents)?.quotes, content.quotes);
+  });
+});
+
+test('same idle Message submit is connection-independent and starts one canonical root', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const first = await connectClient(fixture.root);
+    const second = await connectClient(fixture.root);
+    const messageId = randomUUID();
+    const content = {
+      text: '<context>canonical model input</context>',
+      displayText: 'canonical display input',
+      attachments: [attachment('idle-message', 'context.png')],
+    };
+    const input = {
+      originHostEpoch: host.hostEpoch,
+      sessionId: fixture.sessionId,
+      messageId,
+      content,
+      placement: 'next_turn' as const,
+    };
+
+    const [firstResult, secondResult] = await Promise.all([
+      first.request('turn.message.submit', input),
+      second.request('turn.message.submit', input),
+    ]);
+    assert.deepEqual(secondResult, firstResult);
+    assert.equal(firstResult.disposition, 'turn_started');
+    if (firstResult.disposition !== 'turn_started') return;
+    await waitForTerminalTurn(first, fixture.sessionId, firstResult.turnId);
+    await first.close();
+    await second.close();
+    await fixture.stopHost(host);
+
+    const chain = await fixture.readAdmissionChain();
+    assert.equal(chain.length, 1);
+    assert.deepEqual(chain[0]?.normalizedInput, content);
+    assert.deepEqual(
+      chain[0]?.sourceMessages.map(({ messageId, content, placement, disposition }) => ({
+        messageId,
+        content,
+        placement,
+        disposition,
+      })),
+      [
+        {
+          messageId,
+          content,
+          placement: 'next_turn',
+          disposition: 'turn_started',
+        },
+      ],
+    );
+    const ledger = await fixture.readTurn(firstResult.turnId);
+    assert.equal(ledger.runs.length, 1);
+    assert.equal(ledger.userMessages.length, 1);
+    assert.equal(ledger.userMessages[0]?.id, messageId);
+    assert.equal(ledger.userMessages[0]?.text, content.text);
+    assert.equal(ledger.userMessages[0]?.displayText, content.displayText);
+    assert.deepEqual(ledger.userMessages[0]?.attachments, content.attachments);
+  });
+});
+
+test('a blocked idle Message submit leaves no durable transcript entry', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    const messageId = randomUUID();
+    try {
+      // A Skill the Host cannot resolve is an outcome of admission, not a
+      // protocol failure: the submit answers `blocked` and no Turn is opened.
+      const result = await client.request('turn.message.submit', {
+        originHostEpoch: host.hostEpoch,
+        sessionId: fixture.sessionId,
+        messageId,
+        content: { text: '/skill:missing reject this submit' },
+        placement: 'current_turn',
+      });
+      assert.equal(result.disposition, 'blocked');
+      assert.ok(
+        result.disposition === 'blocked' && result.skillInvocation.failed.length > 0,
+        'the blocked outcome carries why the Skill could not be resolved',
+      );
+    } finally {
+      await client.close();
+      await fixture.stopHost(host);
+    }
+
+    assert.deepEqual(
+      (await fixture.readSessionUserMessages())
+        .filter((message) => message.id === messageId)
+        .map((message) => message.id),
+      [],
+    );
+  });
+});
+
+for (const kibibytes of [31, 32]) {
+  test(`an allowed ${kibibytes} KiB idle Message crosses the durable admission boundary`, async () => {
+    await withExecutionRoot(async (fixture) => {
+      const host = await fixture.startHost();
+      const client = await connectClient(fixture.root);
+      const messageId = randomUUID();
+      const text = 'x'.repeat(kibibytes * 1024);
+      try {
+        const started = await client.request('turn.message.submit', {
+          originHostEpoch: host.hostEpoch,
+          sessionId: fixture.sessionId,
+          messageId,
+          content: { text },
+          placement: 'current_turn',
+        });
+        assert.equal(started.disposition, 'turn_started');
+      } finally {
+        await client.close();
+        await fixture.stopHost(host);
+      }
+      assert.deepEqual(
+        (await fixture.readSessionUserMessages())
+          .filter((message) => message.id === messageId)
+          .map((message) => message.text),
+        [text],
+      );
+    });
+  });
+}
+
+for (const kibibytes of [49, 50]) {
+  test(`a ${kibibytes} KiB idle Message is rejected before durable admission`, async () => {
+    await withExecutionRoot(async (fixture) => {
+      const host = await fixture.startHost();
+      const client = await connectClient(fixture.root);
+      const messageId = randomUUID();
+      try {
+        await assert.rejects(
+          () =>
+            client.request('turn.message.submit', {
+              originHostEpoch: host.hostEpoch,
+              sessionId: fixture.sessionId,
+              messageId,
+              content: { text: 'x'.repeat(kibibytes * 1024) },
+              placement: 'current_turn',
+            }),
+          (error: unknown) =>
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'invalid_frame' &&
+            error.message === 'Invalid Message text',
+        );
+      } finally {
+        await client.close();
+        await fixture.stopHost(host);
+      }
+      assert.deepEqual(
+        (await fixture.readSessionUserMessages())
+          .filter((message) => message.id === messageId)
+          .map((message) => message.id),
+        [],
+      );
+    });
+  });
+}
+
+test('stale Session operations return not_found across the SQLite-backed UDS Host boundary', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    const staleSessionId = randomUUID();
+    try {
+      await assert.rejects(
+        () =>
+          client.request('turn.message.submit', {
+            originHostEpoch: host.hostEpoch,
+            sessionId: staleSessionId,
+            messageId: randomUUID(),
+            content: { text: 'stale submit' },
+            placement: 'next_turn',
+          }),
+        operationError('not_found'),
+      );
+      await assert.rejects(
+        () =>
+          client.request('turn.interrupt', {
+            originHostEpoch: host.hostEpoch,
+            sessionId: staleSessionId,
+            interruptId: randomUUID(),
+            turnId: randomUUID(),
+            runId: randomUUID(),
+          }),
+        operationError('not_found'),
+      );
+      await assert.rejects(
+        () =>
+          client.request('turn.start', {
+            sessionId: staleSessionId,
+            turnId: randomUUID(),
+            content: { text: 'stale start' },
+          }),
+        operationError('not_found'),
+      );
+    } finally {
+      await client.close();
+      await fixture.stopHost(host);
+    }
+  });
+});

@@ -1,0 +1,113 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* ============================================================================
+   Error surface — full-screen error boundary
+   ----------------------------------------------------------------------------
+   Split out of chat-header.css (#546 PR2, relocate — zero visual change).
+   Holds the renderer error boundary (`.vera-error-*`). The old inert
+   `fake` backend banner was removed by #1032 (folded into the hard-only
+   session health notice above the composer).                         */
+
+.vera-error-surface {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    display: grid;
+    place-items: center;
+    padding: var(--space-8);
+    background: var(--background);
+  }
+
+/* #1565 PR 3: the card face (destructive tint, border, radius, shadow) is
+   owned by the Astryx Card in error-boundary.tsx (variant="red",
+   elevation="high"); this class keeps only the icon/copy grid geometry. */
+.vera-error-card {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-3);
+    max-width: 520px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+.vera-error-icon {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    /* Square icon plate — ratio-governed, see --radius-plate. */
+    border-radius: var(--radius-plate);
+    background: oklch(from var(--destructive) l c h / 0.10);
+    color: var(--destructive-text);
+  }
+
+.vera-error-copy {
+    display: grid;
+    gap: var(--space-1-5);
+  }
+
+.vera-error-copy h2 {
+    font: var(--vera-text-heading-4);
+    margin: 0;
+    color: var(--foreground);
+  }
+
+.vera-error-copy p {
+    font: var(--vera-text-body);
+    margin: 0;
+    color: var(--foreground-secondary);
+    max-width: 56ch;
+  }
+
+.vera-error-stack {
+    font: var(--vera-text-supporting);
+    margin: var(--space-1) 0 0;
+    max-height: 220px;
+    padding: var(--space-2-5) var(--space-3);
+    border: var(--border-width-hairline) solid var(--border);
+    border-radius: var(--radius-surface);
+    background: var(--foreground-3);
+    color: var(--foreground-secondary);
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+.vera-error-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1-5);
+  }
+
+.vera-error-copy-action { min-width: 72px; }
+
+.vera-error-copy-action[data-copy-state="pending"] {
+    cursor: progress;
+  }
+
+.vera-error-copy-action[data-copy-state="failed"] {
+    color: var(--destructive);
+    border-color: oklch(from var(--destructive) l c h / 0.35);
+  }
+
+.vera-error-copy-status {
+    color: var(--destructive-text);
+  }

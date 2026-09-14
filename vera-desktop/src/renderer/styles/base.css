@@ -1,0 +1,155 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+  body {
+    margin: 0;
+  }
+/* Astryx 0.2.0 reset uses zero-specificity `:where([hidden])`, so component
+   display declarations can make native-hidden surfaces interactive again.
+   Justified !important: the HTML hidden invariant must beat every component
+   display mode. Remove when the pinned Astryx reset enforces the same invariant. */
+[hidden] {
+    display: none !important;
+  }
+.detailPane {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+.vera-lazy-fallback {
+    font: var(--vera-text-heading-4);
+    min-width: 0;
+    min-height: 72px;
+    display: grid;
+    place-items: center;
+    padding: var(--space-4);
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+.vera-lazy-fallback[data-surface="panel"] {
+    min-height: 160px;
+    height: 100%;
+  }
+.vera-lazy-fallback[data-surface="modal"] {
+    min-height: 100%;
+  }
+.vera-lazy-fallback[data-surface="module"] {
+    align-self: stretch;
+    /* The module shell is a flex row (module-shell.css), so the fallback must
+       claim the main axis itself — `align-self` only stretches it vertically,
+       leaving the loading message shrunk to its own text width. */
+    flex: 1 1 auto;
+    min-height: min(280px, 45vh);
+  }
+/* Form-control font inheritance is owned by the Astryx reset. */
+.vera-visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+button {
+    transition:
+      background var(--duration-base) var(--ease-out-strong),
+      border-color var(--duration-base) var(--ease-out-strong),
+      color var(--duration-base) var(--ease-out-strong);
+  }
+/* Real users' OS-level setting, one global rule (DESIGN.md §10 adjacent:
+     motion is feedback, and a user who asked for less of it gets less of it
+     everywhere, not only where a file remembered to opt out). Kept identical
+     to the fixture-attribute block below so the two variants cannot drift. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+/* PR-IR-04: Test-fixture-driven reduced-motion variant (per
+     the reduced-motion contract tests). Mirrors `prefers-reduced-motion: reduce`
+     via an attribute on `<html>` so e2e-fixture renders can exercise a
+     "reduced motion" variant without depending on the host OS
+     accessibility setting.
+
+     The `data-vera-reduced-motion="true"` attribute is applied by the
+     renderer when `VERA_E2E_FIXTURE_REDUCED_MOTION=1` is set in the env.
+     Real users still get motion as configured by their OS. */
+[data-vera-reduced-motion="true"] *,
+  [data-vera-reduced-motion="true"] *::before,
+  [data-vera-reduced-motion="true"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    /* Scroll behavior + view transition durations also collapse */
+    scroll-behavior: auto !important;
+  }
+/* E2E-fixture renders must be deterministic. We still exercise the
+     normal DOM for every scenario, but remove purely decorative animation,
+     transitions, and caret blink so the rendered state does not depend on
+     the exact millisecond the fixture settles. `paused` is not equivalent:
+     an animation with `fill-mode: backwards` would be frozen in its hidden
+     entry frame instead of the component's settled state. */
+[data-vera-e2e-fixture="true"] *,
+  [data-vera-e2e-fixture="true"] *::before,
+  [data-vera-e2e-fixture="true"] *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    caret-color: transparent !important;
+  }
+
+/* One scrollbar for the whole app (visual system 2.0 T5-F). Both reference
+   systems converged on the same recipe: a slim pill inset in a transparent
+   gutter, one step darker on hover, no painted track. The 2px transparent
+   border + content-box clip turns the 10px hit area into a 6px pill. The
+   few surfaces that hide or thin their own bars are more specific and keep
+   winning. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  /* One step above --border-strong's 16%, scoped to the thumb only. */
+  background-color: oklch(from var(--foreground) l c h / 0.28);
+}

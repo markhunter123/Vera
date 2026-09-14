@@ -1,0 +1,643 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import { createJsonErrorResponseHandler } from '@ai-sdk/provider-utils';
+import { RetryError } from 'ai';
+import { z } from 'zod/v4';
+
+import {
+  classifyError,
+  providerFailureDiagnostic,
+  providerFailureSummary,
+  providerRetryMetadata,
+} from '../provider-error-classification.js';
+
+describe('Provider error classification', () => {
+  test('projects only bounded allowlisted facts into durable diagnostics', () => {
+    const diagnostic = providerFailureDiagnostic(
+      Object.assign(new Error('must not persist sk-secret-or-prompt'), {
+        name: 'AI_APICallError',
+        statusCode: 429,
+        responseHeaders: {
+          'x-request-id': 'req-123',
+          authorization: 'Bearer secret',
+        },
+        data: {
+          error: {
+            code: 'rate_limit_exceeded',
+            message: 'private provider payload',
+          },
+          prompt: 'private customer text',
+        },
+        requestBodyValues: { input: 'private request body' },
+      }),
+    );
+
+    assert.deepEqual(diagnostic, {
+      errorClass: 'RateLimit',
+      httpStatus: 429,
+      providerCode: 'rate_limit_exceeded',
+      providerRequestId: 'req-123',
+      retryable: false,
+    });
+    const serialized = JSON.stringify(diagnostic);
+    assert.doesNotMatch(serialized, /secret|private|authorization|request body/i);
+  });
+
+  test('structured usage-limit codes project to billing regardless of status', () => {
+    const quotaOn401 = Object.assign(new Error('request failed'), {
+      name: 'AI_APICallError',
+      statusCode: 401,
+      data: { error: { code: 'insufficient_quota' } },
+    });
+    assert.equal(classifyError(quotaOn401), 'ProviderBilling');
+
+    const balanceOn403 = Object.assign(new Error('request failed'), {
+      name: 'AI_APICallError',
+      statusCode: 403,
+      data: { error: { code: 'insufficient_balance' } },
+    });
+    assert.equal(classifyError(balanceOn403), 'ProviderBilling');
+
+    // Explicit provider evidence outranks the numeric HTTP fallback: an
+    // exhausted quota is a closed window, not a transient throttle to retry.
+    const quotaOn429 = Object.assign(new Error('request failed'), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      data: { error: { code: 'insufficient_quota' } },
+    });
+    assert.equal(classifyError(quotaOn429), 'ProviderBilling');
+    assert.equal(providerRetryMetadata(quotaOn429).retryable, false);
+  });
+
+  test('plan-window wording on a credential-shaped status projects to billing', () => {
+    // Providers that gate subscription windows behind 401/403 for validly
+    // signed-in users (#2516): their own wording outranks the bare status,
+    // whether the SDK surfaces it as the error message or keeps it only in
+    // the raw response body after a schema-parse failure.
+    const planWindow = Object.assign(new Error('Your account plan usage limit has been reached.'), {
+      name: 'AI_APICallError',
+      statusCode: 401,
+      data: { error: { type: 'authentication_error' } },
+    });
+    assert.equal(classifyError(planWindow), 'ProviderBilling');
+    assert.equal(providerRetryMetadata(planWindow).retryable, false);
+
+    const exhaustedCredits = Object.assign(new Error('Request failed with status code 403'), {
+      name: 'AI_APICallError',
+      statusCode: 403,
+      responseBody: JSON.stringify({
+        error: { message: 'Your credits have been exhausted for this billing period.' },
+      }),
+    });
+    assert.equal(classifyError(exhaustedCredits), 'ProviderBilling');
+  });
+
+  test('genuine credential and permission failures stay auth on 401/403', () => {
+    const invalidKey = Object.assign(new Error('Invalid API key provided'), {
+      name: 'AI_APICallError',
+      statusCode: 401,
+      data: { error: { message: 'Invalid API key. Check your credentials and try again.' } },
+    });
+    assert.equal(classifyError(invalidKey), 'Auth');
+
+    const forbiddenModel = Object.assign(new Error('request failed'), {
+      name: 'AI_APICallError',
+      statusCode: 403,
+      data: { error: { message: 'You do not have access to this model.' } },
+    });
+    assert.equal(classifyError(forbiddenModel), 'Auth');
+    const serverErrorOn403 = Object.assign(new Error('request failed'), {
+      name: 'AI_APICallError',
+      statusCode: 403,
+      data: { error: { code: 'server_error' } },
+    });
+    assert.equal(classifyError(serverErrorOn403), 'Auth');
+  });
+
+  test('classifies exhausted Codex HTML edge 403 retries as provider unavailable', () => {
+    const exhaustedEdgeRejection = Object.assign(
+      new Error('Codex OAuth request failed: HTTP 403 Request rejected'),
+      {
+        name: 'OpenAiCodexEdgeRejectionError',
+        statusCode: 403,
+        data: { error: { code: 'openai_codex_edge_rejection' } },
+      },
+    );
+
+    assert.equal(classifyError(exhaustedEdgeRejection), 'ProviderUnavailable');
+    assert.deepEqual(providerRetryMetadata(exhaustedEdgeRejection), { retryable: false });
+    assert.deepEqual(providerFailureDiagnostic(exhaustedEdgeRejection), {
+      errorClass: 'ProviderUnavailable',
+      httpStatus: 403,
+      providerCode: 'openai_codex_edge_rejection',
+      retryable: false,
+    });
+    const spoofedProviderPayload = Object.assign(new Error('request failed'), {
+      name: 'AI_APICallError',
+      statusCode: 403,
+      data: { error: { code: 'openai_codex_edge_rejection' } },
+    });
+    assert.equal(classifyError(spoofedProviderPayload), 'Auth');
+    assert.notEqual(
+      classifyError({ code: 'openai_codex_edge_rejection', message: 'provider payload' }),
+      'ProviderUnavailable',
+    );
+  });
+
+  test('recovers structured Codex HTTP facts through an SDK wrapper and truncates identifiers', () => {
+    const cause = Object.assign(new Error('Codex OAuth request failed'), {
+      name: 'OpenAiCodexHttpError',
+      statusCode: 400,
+      data: { error: { code: 'x'.repeat(1_024) } },
+      responseHeaders: { 'x-request-id': 'r'.repeat(1_024) },
+    });
+    const diagnostic = providerFailureDiagnostic(
+      Object.assign(new Error('Cannot connect to API'), {
+        name: 'AI_APICallError',
+        code: 'FETCH_FAILED',
+        cause,
+      }),
+    );
+
+    assert.equal(diagnostic.errorClass, 'RequestRejected');
+    assert.equal(diagnostic.httpStatus, 400);
+    assert.ok((diagnostic.providerCode?.length ?? 0) <= 256);
+    assert.ok((diagnostic.providerRequestId?.length ?? 0) <= 256);
+    assert.equal(diagnostic.retryable, false);
+  });
+
+  test('durable diagnostics distinguish the provider failure classes used by fail-open handling', () => {
+    const cases: Array<[unknown, string]> = [
+      [Object.assign(new Error('bad request'), { statusCode: 400 }), 'RequestRejected'],
+      [Object.assign(new Error('slow down'), { statusCode: 429 }), 'RateLimit'],
+      [Object.assign(new Error('upstream failed'), { statusCode: 503 }), 'ProviderUnavailable'],
+      [new DOMException('request timed out', 'TimeoutError'), 'Timeout'],
+      [new TypeError('fetch failed'), 'Network'],
+      [
+        Object.assign(new Error('input rejected'), {
+          statusCode: 400,
+          data: { error: { code: 'context_length_exceeded' } },
+        }),
+        'ContextLength',
+      ],
+    ];
+
+    for (const [error, expected] of cases) {
+      assert.equal(providerFailureDiagnostic(error).errorClass, expected);
+    }
+  });
+
+  test('extracts allowlisted fields from JSON string failures without copying the payload', () => {
+    const summary = providerFailureSummary(
+      JSON.stringify({
+        error: { message: 'provider rejected request', code: 'bad_request' },
+        request_id: 'req-123',
+        prompt: 'private customer text',
+        headers: { 'x-debug': 'internal' },
+      }),
+    );
+
+    assert.deepEqual(summary, {
+      message: 'provider rejected request (code=bad_request, requestId=req-123)',
+      code: 'bad_request',
+    });
+    assert.equal(JSON.stringify(summary).includes('private customer text'), false);
+    assert.equal(JSON.stringify(summary).includes('x-debug'), false);
+    assert.deepEqual(
+      providerFailureSummary({
+        error: JSON.stringify({
+          message: 'nested provider rejection',
+          code: 'nested_error',
+          prompt: 'another private prompt',
+        }),
+      }),
+      {
+        message: 'nested provider rejection (code=nested_error)',
+        code: 'nested_error',
+      },
+    );
+    assert.equal(
+      providerFailureSummary(JSON.stringify([{ prompt: 'private list payload' }])),
+      undefined,
+    );
+  });
+
+  test('retries incremental Responses transport failures with stable classification', () => {
+    const websocketFailure = Object.assign(new Error('closed before completion'), {
+      name: 'OpenAiResponsesTransportError',
+      code: 'OPENAI_RESPONSES_WEBSOCKET_TRANSPORT_ERROR',
+    });
+    const missingContinuation = Object.assign(new Error('continuation unavailable'), {
+      name: 'OpenAiResponsesTransportError',
+      code: 'OPENAI_RESPONSES_CONTINUATION_UNAVAILABLE',
+    });
+
+    assert.equal(classifyError(websocketFailure), 'Network');
+    assert.deepEqual(providerRetryMetadata(websocketFailure), { retryable: true });
+    assert.deepEqual(providerRetryMetadata(missingContinuation), { retryable: true });
+  });
+
+  test('treats a status-less provider server_error as temporarily unavailable', () => {
+    const failure = {
+      type: 'model_failure',
+      kind: 'unknown',
+      retryable: false,
+      message:
+        'Streaming response failed: [502] Upstream error from Nvidia: Service temporarily overloaded',
+      code: 'server_error',
+    };
+
+    assert.equal(classifyError(failure), 'ProviderUnavailable');
+    assert.deepEqual(providerRetryMetadata(failure), { retryable: true });
+    assert.deepEqual(providerFailureDiagnostic(failure), {
+      errorClass: 'ProviderUnavailable',
+      providerCode: 'server_error',
+      retryable: true,
+    });
+  });
+
+  test('retries an AI SDK transport failure without an HTTP response', () => {
+    const failure = Object.assign(
+      new Error(
+        'Cannot connect to API: 80E1BDF601000000:error:0A000119:SSL routines:tls_get_more_records:decryption failed or bad record mac:../deps/openssl/openssl/ssl/record/methods/tls_common.c:869:',
+      ),
+      {
+        name: 'AI_APICallError',
+        isRetryable: true,
+        cause: Object.assign(new TypeError('fetch failed'), {
+          cause: Object.assign(new Error('decryption failed or bad record mac'), {
+            code: 'ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC',
+          }),
+        }),
+      },
+    );
+
+    assert.equal(classifyError(failure), 'Network');
+    assert.deepEqual(providerRetryMetadata(failure), { retryable: true });
+    assert.equal(providerFailureDiagnostic(failure).retryable, true);
+  });
+
+  test('retries a transport failure identified only by a cause code', () => {
+    const failure = Object.assign(new Error('request failed'), {
+      cause: { code: 'ECONNRESET' },
+    });
+
+    assert.equal(classifyError(failure), 'Network');
+    assert.deepEqual(providerRetryMetadata(failure), { retryable: true });
+  });
+
+  test('does not retry a bare rate limit marked retryable by the AI SDK', () => {
+    const rateLimit = Object.assign(new Error('Rate limit exceeded'), {
+      name: 'AI_APICallError',
+      isRetryable: true,
+      statusCode: 429,
+    });
+
+    assert.deepEqual(providerRetryMetadata(rateLimit), { retryable: false });
+  });
+
+  test('retries a rate limit only when the provider names a retry delay', () => {
+    const bareRateLimit = Object.assign(new Error('Rate limit exceeded'), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      data: { error: { code: 'FreeUsageLimitError', message: 'Rate limit exceeded' } },
+    });
+    const delayedRateLimit = Object.assign(new Error('Too many requests'), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      responseHeaders: { 'retry-after': '40' },
+    });
+
+    assert.deepEqual(providerRetryMetadata(bareRateLimit), { retryable: false });
+    assert.deepEqual(providerRetryMetadata(delayedRateLimit), {
+      retryable: true,
+      retryAfterMs: 40_000,
+    });
+    assert.equal(providerFailureDiagnostic(bareRateLimit).retryable, false);
+    assert.equal(providerFailureDiagnostic(delayedRateLimit).retryable, true);
+  });
+
+  test('classifies provider capacity errors and retries with backoff', () => {
+    const capacity = () =>
+      Object.assign(new Error('The model is currently at capacity due to high demand.'), {
+        name: 'AI_APICallError',
+        data: { error: { code: 'resource-exhausted' } },
+      });
+
+    assert.equal(classifyError(capacity()), 'ProviderCapacity');
+    assert.deepEqual(providerRetryMetadata(capacity()), { retryable: true });
+    assert.deepEqual(
+      providerRetryMetadata(
+        Object.assign(capacity(), {
+          responseHeaders: { 'retry-after': '12' },
+        }),
+      ),
+      { retryable: true, retryAfterMs: 12_000 },
+    );
+    assert.deepEqual(
+      providerRetryMetadata(
+        Object.assign(capacity(), {
+          responseHeaders: { 'retry-after': 'not-a-delay' },
+        }),
+      ),
+      { retryable: true },
+    );
+
+    const topLevelCode = Object.assign(new Error('The model is currently at capacity'), {
+      code: 'resource-exhausted',
+    });
+    assert.equal(classifyError(topLevelCode), 'ProviderCapacity');
+
+    const capacityWithAbortText = Object.assign(new Error('Request aborted by upstream'), {
+      name: 'AI_APICallError',
+      data: { error: { code: 'resource-exhausted' } },
+    });
+    assert.equal(classifyError(capacityWithAbortText), 'ProviderCapacity');
+
+    const capacityWithRateLimitStatus = Object.assign(new Error('Too many requests'), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      data: { error: { code: 'resource-exhausted' } },
+    });
+    assert.equal(classifyError(capacityWithRateLimitStatus), 'ProviderCapacity');
+    assert.deepEqual(providerRetryMetadata(capacityWithRateLimitStatus), { retryable: true });
+    assert.deepEqual(providerFailureDiagnostic(capacityWithRateLimitStatus), {
+      errorClass: 'ProviderCapacity',
+      httpStatus: 429,
+      providerCode: 'resource-exhausted',
+      retryable: true,
+    });
+    assert.equal(
+      providerFailureDiagnostic(
+        Object.assign(new Error('The model is at capacity'), {
+          name: 'AI_APICallError',
+          statusCode: 503,
+          data: { error: { code: 'resource-exhausted' } },
+        }),
+      ).errorClass,
+      'ProviderCapacity',
+    );
+
+    const ambiguousQuotaCode = Object.assign(new Error('resource exhausted'), {
+      name: 'AI_APICallError',
+      data: { error: { code: 'resource_exhausted' } },
+    });
+    assert.notEqual(classifyError(ambiguousQuotaCode), 'ProviderCapacity');
+  });
+
+  test('classifies context overflow by predicate, carrier shape, and evidence precedence', () => {
+    const overflow = (message: string, extra: Record<string, unknown> = {}) =>
+      classifyError(Object.assign(new Error(message), { name: 'AI_APICallError', ...extra }));
+
+    const textCases = [
+      'prompt is too long: 213462 tokens > 200000 maximum',
+      'request_too_large: Request exceeds the maximum size',
+      'Your input exceeds the context window of this model',
+      "Requested token count exceeds the model's maximum context length of 131072 tokens",
+      'The input token count (1196265) exceeds the maximum number of tokens allowed',
+      "This model's maximum prompt length is 131072 but the request contains 537812 tokens",
+      'Please reduce the length of the messages or completion',
+      "This endpoint's maximum context length is 262144 tokens",
+      'Prompt contains 5000 tokens; too large for model with 4096 maximum context length',
+      'invalid params, context window exceeds limit',
+      'Your request exceeded model token limit: 200000',
+      'prompt token count of 21000 exceeds the limit of 16384',
+      'the prompt contains too many tokens',
+      'Input token limit exceeded: 250000 tokens > 200000 maximum',
+      'Failed to generate response: context_length_exceeded',
+    ];
+    for (const message of textCases) {
+      assert.equal(overflow(message, { statusCode: 400 }), 'ContextLength', message);
+    }
+
+    assert.equal(
+      overflow('Bad Request', {
+        statusCode: 400,
+        data: { error: { message: 'Bad Request', code: 'context_length_exceeded' } },
+      }),
+      'ContextLength',
+    );
+    assert.equal(
+      overflow('Bad Request', {
+        statusCode: 400,
+        responseBody: '{"error":{"code":"context_length_exceeded"}}',
+      }),
+      'ContextLength',
+    );
+    assert.equal(
+      overflow('Request Entity Too Large', {
+        statusCode: 400,
+        data: { error: { type: 'request_too_large', message: 'Request Entity Too Large' } },
+      }),
+      'ContextLength',
+    );
+
+    assert.equal(
+      classifyError({
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          code: 'context_length_exceeded',
+          message: 'Bad Request',
+        },
+      }),
+      'ContextLength',
+    );
+    assert.equal(
+      classifyError(
+        "Requested token count exceeds the model's maximum context length of 131072 tokens.",
+      ),
+      'ContextLength',
+    );
+    assert.equal(
+      classifyError({ type: 'invalid_request_error', message: 'missing required field' }),
+      'Other',
+    );
+
+    assert.equal(
+      overflow('Service Unavailable', {
+        statusCode: 503,
+        data: { error: { message: 'Service Unavailable', code: 'context_length_exceeded' } },
+      }),
+      'ContextLength',
+    );
+    assert.equal(
+      overflow(
+        "503 proxy error: Requested token count exceeds the model's maximum context length",
+        { statusCode: 503 },
+      ),
+      'ContextLength',
+    );
+    assert.equal(overflow('', { statusCode: 413 }), 'ContextLength');
+    assert.equal(
+      overflow('Please rate limit your requests', { statusCode: 503 }),
+      'ProviderUnavailable',
+    );
+    assert.notEqual(overflow('Failed to generate response', { statusCode: 400 }), 'RateLimit');
+    assert.equal(overflow('rate_limit_exceeded: slow down'), 'RateLimit');
+
+    const vetoedTextCases = [
+      'Rate limit reached: too many tokens, please wait',
+      "Too many requests. This endpoint's maximum context length is 262144 tokens.",
+      "ThrottlingException. This endpoint's maximum context length is 262144 tokens.",
+      "Quota exceeded. This endpoint's maximum context length is 262144 tokens.",
+      "Completion has too many tokens. This endpoint's maximum context length is 262144 tokens.",
+      "Too many tokens were requested for the completion. This endpoint's maximum context length is 262144 tokens.",
+      "Output token count of 8192 exceeds the limit. This endpoint's maximum context length is 262144 tokens.",
+      "Too many completion tokens were requested. This endpoint's maximum context length is 262144 tokens.",
+      "Maximum completion tokens exceeded. This endpoint's maximum context length is 262144 tokens.",
+    ];
+    for (const message of vetoedTextCases) {
+      assert.notEqual(overflow(message, { statusCode: 400 }), 'ContextLength', message);
+    }
+    for (const message of [
+      'invalid request: missing required field',
+      'file size exceeds the limit of 10485760',
+    ]) {
+      assert.notEqual(overflow(message, { statusCode: 400 }), 'ContextLength', message);
+    }
+
+    assert.equal(
+      overflow(
+        "This model's maximum context length is 8192 tokens. However, you requested 10240 tokens (10140 in the messages, 100 in the completion).",
+        { statusCode: 400 },
+      ),
+      'ContextLength',
+    );
+    assert.equal(
+      overflow('Completion has too many tokens for this model', {
+        statusCode: 400,
+        data: {
+          error: {
+            message: 'Completion has too many tokens for this model',
+            code: 'context_length_exceeded',
+          },
+        },
+      }),
+      'ContextLength',
+    );
+  });
+
+  test('classifies wording retained only in schema-invalid response bodies', async () => {
+    const handler = createJsonErrorResponseHandler({
+      errorSchema: z.object({ error: z.object({ message: z.string() }) }),
+      errorToMessage: (data) => data.error.message,
+    });
+    const errorFromBody = async (body: string) =>
+      (
+        await handler({
+          response: new Response(body, { status: 400, statusText: 'Bad Request' }),
+          url: 'https://api.example.test/v1/chat/completions',
+          requestBodyValues: {},
+        })
+      ).value;
+
+    const overflowError = await errorFromBody(
+      '{"error":"Your input exceeds the context window of this model"}',
+    );
+    assert.equal(overflowError.message, 'Bad Request');
+    assert.equal(overflowError.data, undefined);
+    assert.equal(classifyError(overflowError), 'ContextLength');
+
+    const outputCapError = await errorFromBody(
+      '{"error":"Too many completion tokens were requested. This endpoint\'s maximum context length is 262144 tokens."}',
+    );
+    assert.notEqual(classifyError(outputCapError), 'ContextLength');
+  });
+
+  test('preserves provider evidence through the official AI SDK retry wrapper', async () => {
+    const handler = createJsonErrorResponseHandler({
+      errorSchema: z.object({
+        error: z.object({
+          message: z.string(),
+          code: z.string().optional(),
+        }),
+      }),
+      errorToMessage: (data) => data.error.message,
+    });
+    const apiCallError = async (status: number, body: string) =>
+      (
+        await handler({
+          response: new Response(body, { status, statusText: `HTTP ${status}` }),
+          url: 'https://api.example.test/v1/chat/completions',
+          requestBodyValues: {},
+        })
+      ).value;
+    const retried = (
+      lastError: unknown,
+      reason: 'maxRetriesExceeded' | 'errorNotRetryable' = 'maxRetriesExceeded',
+    ) =>
+      new RetryError({
+        message: 'Provider request failed after retries',
+        reason,
+        errors: [lastError, lastError, lastError],
+      });
+
+    const rateLimit = await apiCallError(429, '{"error":{"message":"Too many requests"}}');
+    const unavailable = await apiCallError(503, '{"error":{"message":"Service unavailable"}}');
+    const overflow = await apiCallError(
+      503,
+      '{"error":{"message":"Service unavailable","code":"context_length_exceeded"}}',
+    );
+
+    assert.equal(classifyError(retried(rateLimit)), 'RateLimit');
+    assert.equal(classifyError(retried(unavailable)), 'ProviderUnavailable');
+    assert.equal(classifyError(retried(overflow, 'errorNotRetryable')), 'ContextLength');
+    assert.equal(
+      classifyError(
+        new RetryError({
+          message: 'Retry stopped',
+          reason: 'abort',
+          errors: [new Error('transport stopped')],
+        }),
+      ),
+      'Abort',
+    );
+    assert.equal(
+      classifyError(
+        new RetryError({
+          message: 'Provider request failed after retries',
+          reason: 'maxRetriesExceeded',
+          errors: [],
+        }),
+      ),
+      'AI_RetryError',
+    );
+    assert.equal(
+      classifyError(
+        Object.assign(new Error('Provider request failed after retries'), {
+          name: 'AI_RetryError',
+          lastError: rateLimit,
+        }),
+      ),
+      'AI_RetryError',
+    );
+  });
+});
+
+test('auth classification matches authentication without matching authority', () => {
+  assert.equal(classifyError(new Error('OAuth2 token expired')), 'Auth');
+  assert.equal(
+    classifyError(new Error('Conversation copy contains durable runtime authority facts')),
+    'Error',
+  );
+});

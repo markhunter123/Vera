@@ -1,0 +1,31 @@
+{
+  "name": "@vera/mcp",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "description": "Provider-neutral MCP client manager for Vera.",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./dist/index.js",
+    "./test-only/stdio-server": "./dist/__fixtures__/stdio-server.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "node ../scripts/clean-paths.mjs dist tsconfig.tsbuildinfo",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:dist": "node --test \"dist/**/*.test.js\"",
+    "test": "npm run clean && npm run build && node --test \"dist/**/*.test.js\""
+  },
+  "dependencies": {
+    "@vera/core": "1.0.0",
+    "@modelcontextprotocol/client": "2.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server-legacy": "2.0.0"
+  }
+}

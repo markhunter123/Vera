@@ -1,0 +1,251 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* Deep research workflow + report/scope/evidence/progress. Relocated from sidebar.css — issue #546 PR3. */
+.vera-deep-research-workflow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vera-deep-research-workflow li {
+  min-width: 0;
+  border: var(--border-width-hairline) solid var(--border);
+  border-radius: var(--radius-surface);
+  background: oklch(from var(--focus-ring) l c h / 0.035);
+  padding: var(--space-2-5);
+}
+
+.vera-deep-research-workflow-title {
+  font: var(--vera-text-heading-4);
+  display: block;
+  margin: 0 0 var(--space-1);
+  color: var(--foreground);
+}
+
+.vera-deep-research-workflow-body {
+  font: var(--vera-text-body);
+  display: block;
+  color: var(--foreground-secondary);
+}
+
+.vera-deep-research-report,
+.vera-deep-research-scope,
+.vera-deep-research-evidence,
+.vera-deep-research-progress {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0 0;
+  border-top: var(--border-width-hairline) solid var(--border);
+}
+
+.vera-deep-research-report h2,
+.vera-deep-research-scope h2,
+.vera-deep-research-evidence h2,
+.vera-deep-research-progress h2 {
+  font: var(--vera-text-heading-4);
+  margin: 0;
+  color: var(--foreground);
+}
+
+.vera-deep-research-report ul,
+.vera-deep-research-scope ul,
+.vera-deep-research-evidence ul,
+.vera-deep-research-progress ul {
+  display: grid;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vera-deep-research-report li,
+.vera-deep-research-scope li,
+.vera-deep-research-evidence li,
+.vera-deep-research-progress li {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  gap: var(--space-2-5);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.vera-deep-research-report-title,
+.vera-deep-research-scope-label,
+.vera-deep-research-evidence-title,
+.vera-deep-research-progress-title {
+  font: var(--vera-text-heading-4);
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.vera-deep-research-report-body,
+.vera-deep-research-scope-body,
+.vera-deep-research-evidence-body,
+.vera-deep-research-progress-body {
+  font: var(--vera-text-body);
+  min-width: 0;
+  color: var(--foreground-secondary);
+}
+
+.vera-deep-research-run-panel {
+  flex: 0 0 auto;
+  margin: 0 var(--space-4) var(--space-2-5);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width-hairline) solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--info-wash);
+  color: var(--foreground);
+}
+
+.vera-deep-research-run-panel[data-status="completed"] {
+  background: var(--success-wash);
+}
+
+.vera-deep-research-run-summary,
+.vera-deep-research-run-summary > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+}
+
+.vera-deep-research-run-summary {
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.vera-deep-research-run-summary strong {
+  font: var(--vera-text-heading-4);
+}
+
+.vera-deep-research-run-summary span,
+.vera-deep-research-run-panel p {
+  font: var(--vera-text-supporting);
+  color: var(--foreground-secondary);
+}
+
+.vera-deep-research-run-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* #1879: a count pill beside an Astryx Button, and the same shape as
+   `.vera-session-workbar-count` and `.vera-tool-count`. It declared no type of
+   its own — it inherits — which is precisely how it stayed invisible to a chip
+   scan that required a rule to name its own role. Measured 24px natural (20px
+   line box plus 2 x 2px padding); `--h-control-sm` is 24, so nothing moves. */
+.vera-deep-research-run-count {
+  height: var(--h-control-sm);
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--info-wash);
+  font-variant-numeric: tabular-nums;
+}
+
+.vera-deep-research-handoff-button {
+  font: var(--vera-text-heading-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  min-height: var(--h-control-lg);
+  padding: 0 var(--space-3);
+  border: var(--border-width-hairline) solid var(--focus-ring);
+  border-radius: var(--radius-control);
+  background: var(--background);
+  color: var(--foreground);
+  transition:
+    background-color var(--duration-quick) var(--ease-out-strong),
+    border-color var(--duration-quick) var(--ease-out-strong);
+}
+
+.vera-deep-research-handoff-button:hover {
+  background: var(--info-wash);
+}
+
+.vera-deep-research-handoff-button:active {
+  background: var(--info-wash-border);
+}
+
+.vera-deep-research-handoff-button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.vera-deep-research-run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+.vera-deep-research-run-grid h3 {
+  font: var(--vera-text-heading-5);
+  margin: 0 0 var(--space-1-5);
+  color: var(--foreground-secondary);
+}
+
+.vera-deep-research-run-grid ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vera-deep-research-run-grid li {
+  font: var(--vera-text-supporting);
+  display: flex;
+  gap: var(--space-1-5);
+  min-width: 0;
+  color: var(--foreground-secondary);
+}
+
+.vera-deep-research-run-grid li[data-status="completed"] > span {
+  color: var(--success-text);
+}
+
+.vera-deep-research-run-grid li[data-status="blocked"],
+.vera-deep-research-run-blockers {
+  color: var(--destructive-text);
+}
+
+.vera-deep-research-run-grid code {
+  overflow: hidden;
+  min-width: 0;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .vera-deep-research-run-summary {
+    align-items: flex-start;
+  }
+
+  .vera-deep-research-run-summary,
+  .vera-deep-research-run-actions {
+    flex-wrap: wrap;
+  }
+}

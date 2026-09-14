@@ -1,0 +1,120 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+.vera-onboarding {
+  min-width: 0;
+}
+
+.vera-onboarding-center {
+  min-width: 0;
+}
+
+.vera-onboarding-wordmark {
+  color: var(--vera-brand);
+}
+
+.vera-onboarding-card {
+  overflow: hidden;
+}
+
+.vera-onboarding-header h1 {
+  text-wrap: balance;
+}
+
+.vera-onboarding-header p {
+  text-wrap: pretty;
+}
+
+.vera-onboarding-provider-group,
+.vera-onboarding-actions {
+  min-width: 0;
+}
+
+.vera-onboarding-provider-list {
+  max-height: min(320px, 42vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The first-run screen is a viewport, not a transcript. ChatMessageList keeps
+   an empty flex spacer before its empty state so ordinary chat heroes settle
+   low in the message flow; here that spacer gives the full-height onboarding
+   surface only half of the available block size. The surface then overflows
+   ChatLayout and its self-scroll root exposes a phantom page scrollbar. */
+.vera-chat-layout:has(.vera-onboarding-surface) {
+  overflow-y: hidden;
+}
+
+.vera-chat-layout:has(.vera-onboarding-surface) > :first-child {
+  flex: 1 1 auto;
+  padding-block-end: 0;
+  overflow: hidden;
+}
+
+.vera-chat-message-list:has(.vera-onboarding-surface) > div > [aria-hidden]:has(+ :last-child) {
+  display: none;
+}
+
+/* ChatLayout always paints its frosted composer dock, even when the Composer
+   itself is hidden. Onboarding owns the whole empty surface, so that dock has
+   no content to support and would blur the card actions behind it. Derive the
+   opt-out from the mounted surface instead of duplicating onboarding state. */
+.vera-chat-layout:has(.vera-onboarding-surface) > :last-child {
+  display: none;
+}
+
+/* The snapshot slot blocks the ordinary empty-chat hero while main resolves
+   onboarding state. The frame keeps the ready card's geometry; the bars inside
+   are Astryx Skeletons (DESIGN.md §10) rather than hand-drawn statics. */
+.vera-onboarding-loading {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  width: min(460px, calc(100% - 32px));
+  min-height: 196px;
+  margin: auto;
+  padding: var(--space-8) var(--space-6);
+  overflow: hidden;
+  border: var(--border-width-hairline) solid var(--border-strong);
+  border-radius: var(--radius-modal);
+  background: var(--foreground-5);
+}
+
+.vera-onboarding-surface {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--space-8) var(--space-6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 560px) {
+  .vera-onboarding-surface {
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+@media (max-height: 720px) {
+  .vera-onboarding-surface {
+    align-items: start;
+  }
+}

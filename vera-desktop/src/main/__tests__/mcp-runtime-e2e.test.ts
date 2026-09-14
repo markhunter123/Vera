@@ -1,0 +1,96 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
+import { MCP_CONFIG_VERSION } from '@vera/core/mcp';
+import { McpClientManager } from '@vera/mcp';
+import { buildMcpTools } from '@vera/runtime/mcp-tools';
+
+const fixturePath = fileURLToPath(new URL('../../../../vera-mcp/dist/__fixtures__/stdio-server.js', import.meta.url));
+
+test('MCP tools stay bound to the connection generation that advertised them', async () => {
+  const manager = new McpClientManager({
+    timeouts: { stdioConnectMs: 5_000, listToolsMs: 5_000, callToolMs: 5_000 },
+  });
+  try {
+    await manager.sync({
+      version: MCP_CONFIG_VERSION,
+      mcpServers: {
+        fixture: { command: process.execPath, args: [fixturePath] },
+      },
+    });
+    const tools = buildMcpTools(manager);
+    const echo = tools.find((tool) => tool.name === 'mcp__fixture__echo');
+    assert.ok(echo);
+    assert.equal(echo.categoryHint, 'network_send');
+    const result = await echo.impl({ value: 'runtime-e2e' }, {
+      sessionId: 'session', turnId: 'turn', cwd: process.cwd(), toolCallId: 'call',
+      abortSignal: new AbortController().signal, emitOutput() {},
+    });
+    assert.deepEqual(result, {
+      content: [{ type: 'text', text: 'runtime-e2e' }],
+      structuredContent: { echoed: 'runtime-e2e' },
+    });
+
+    const firstRevision = manager.toolSnapshot().revision;
+    await manager.reconnect('fixture');
+    assert.ok(manager.toolSnapshot().revision > firstRevision);
+    await assert.rejects(
+      async () =>
+        echo.impl(
+          { value: 'stale-generation' },
+          {
+            sessionId: 'session',
+            turnId: 'turn',
+            cwd: process.cwd(),
+            toolCallId: 'stale-call',
+            abortSignal: new AbortController().signal,
+            emitOutput() {},
+          },
+        ),
+      /tool binding is stale/u,
+    );
+
+    const replacement = buildMcpTools(manager).find(
+      (tool) => tool.name === 'mcp__fixture__echo',
+    );
+    assert.ok(replacement);
+    assert.deepEqual(
+      await replacement.impl(
+        { value: 'replacement-generation' },
+        {
+          sessionId: 'session',
+          turnId: 'turn',
+          cwd: process.cwd(),
+          toolCallId: 'replacement-call',
+          abortSignal: new AbortController().signal,
+          emitOutput() {},
+        },
+      ),
+      {
+        content: [{ type: 'text', text: 'replacement-generation' }],
+        structuredContent: { echoed: 'replacement-generation' },
+      },
+    );
+  } finally {
+    await manager.close();
+  }
+});

@@ -1,0 +1,60 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Bug report
+description: Report a defect in Vera (Desktop, TUI/CLI, Runtime Host, or Eval)
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the defect. If the expected behavior is not obvious, say what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: Steps from a fresh start. A stable minimal reproduction is not required—if it is intermittent, describe the conditions and how often it happens.
+      placeholder: |
+        1. Open Settings → Models
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Fill in what you know. When running from source, obtain the commit with `git rev-parse --short HEAD`.
+      placeholder: |
+        - Vera version or commit:
+        - OS and version:
+        - Surface: Desktop / TUI / CLI / Runtime Host / Eval
+        - Node.js version, if running from source:
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Logs, screenshots, or additional context
+      description: Add anything else that helps. Redact API keys, tokens, and other credentials before sharing logs or screenshots.
+    validations:
+      required: false

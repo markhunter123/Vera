@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "vera-core" },
+    { "path": "vera-storage" },
+    { "path": "vera-mcp" },
+    { "path": "vera-runtime" },
+    { "path": "vera-runtime-host" },
+    { "path": "vera-computer-use" },
+    { "path": "vera-ui" }
+  ]
+}

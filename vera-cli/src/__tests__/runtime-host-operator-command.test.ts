@@ -1,0 +1,439 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { describe, test } from 'node:test';
+import type { RuntimeHostConnection } from '@vera/runtime-host/client';
+import { decodeRuntimeHostActivationFrame } from '@vera/runtime-host/operator';
+import {
+  HOST_OPERATION_SPECS,
+  REMOTE_OWNER_OPERATION_GRANTS,
+  RUNTIME_HOST_COMPATIBILITY_EPOCH,
+  RUNTIME_HOST_PROTOCOL_VERSION,
+} from '@vera/runtime-host/protocol';
+import { runRuntimeHostManagedActivationCli } from '../runtime-host-activation-command.js';
+import {
+  resolveRuntimeHostAccessIssue,
+  type RuntimeHostAccessIssueOptions,
+} from '../runtime-host-access-command.js';
+import { parseRuntimeHostCommand } from '../runtime-host-cli.js';
+import { runRuntimeHostProjectCli } from '../runtime-host-project-command.js';
+import { createRuntimeHostServiceReadyEvent } from '../runtime-host-service-command.js';
+
+const projectRootA = process.platform === 'win32' ? 'C:\\srv\\projects' : '/srv/projects';
+const projectRootB = process.platform === 'win32' ? 'D:\\data' : '/mnt/data';
+
+describe('Runtime Host operator commands', () => {
+  test('parses and emits the stable framed managed activation contract', async () => {
+    const rootId = 'a'.repeat(64);
+    assert.deepEqual(parseRuntimeHostCommand(['activate', '--framed', '--root-id', rootId]), {
+      kind: 'runtime-host-managed-activate',
+      rootId,
+      framed: true,
+    });
+    assert.equal(parseRuntimeHostCommand(['activate', '--root-id', rootId]).kind, 'error');
+
+    let output = '';
+    assert.equal(
+      await runRuntimeHostManagedActivationCli(
+        { rootId },
+        {
+          activate: async () => ({
+            schemaVersion: 1,
+            kind: 'result',
+            deploymentId: '00000000-0000-4000-8000-000000000001',
+            configRevision: 1,
+            rootId,
+            hostEpoch: 'host-epoch',
+            pid: 1234,
+            protocolVersion: RUNTIME_HOST_PROTOCOL_VERSION,
+            endpoint: {
+              host: '127.0.0.1',
+              port: 43_210,
+              websocketPath: '/runtime-host',
+            },
+          }),
+          writeOutput: (value) => {
+            output += value;
+          },
+        },
+      ),
+      0,
+    );
+    assert.equal(decodeRuntimeHostActivationFrame(output)?.kind, 'result');
+  });
+  test('parses project management and machine-readable service readiness', () => {
+    assert.deepEqual(parseRuntimeHostCommand(['project', 'list', '--root', '/srv/vera']), {
+      kind: 'runtime-host-project-list',
+      rootPath: '/srv/vera',
+    });
+    assert.deepEqual(
+      parseRuntimeHostCommand(['project', 'add', '/work/project', '--root', '/srv/vera']),
+      {
+        kind: 'runtime-host-project-add',
+        rootPath: '/srv/vera',
+        path: '/work/project',
+        prefer: false,
+      },
+    );
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'project',
+        'add',
+        '/work/project',
+        '--prefer',
+        '--root',
+        '/srv/vera',
+      ]),
+      {
+        kind: 'runtime-host-project-add',
+        rootPath: '/srv/vera',
+        path: '/work/project',
+        prefer: true,
+      },
+    );
+    assert.deepEqual(parseRuntimeHostCommand(['serve', '--json', '--no-project-roots']), {
+      kind: 'runtime-host-serve',
+      json: true,
+      projectDirectoryRoots: [],
+    });
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'serve',
+        '--json',
+        '--project-root',
+        `Projects=${projectRootA}`,
+        '--project-root',
+        `Data=${projectRootB}`,
+      ]),
+      {
+        kind: 'runtime-host-serve',
+        json: true,
+        projectDirectoryRoots: [
+          { label: 'Projects', path: projectRootA },
+          { label: 'Data', path: projectRootB },
+        ],
+      },
+    );
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'serve',
+        '--project-root-json',
+        JSON.stringify({ label: 'Work=Primary', path: projectRootA }),
+      ]),
+      {
+        kind: 'runtime-host-serve',
+        json: false,
+        projectDirectoryRoots: [{ label: 'Work=Primary', path: projectRootA }],
+      },
+    );
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'serve',
+        '--managed-service-config',
+        '/config/Vera/runtime-host-service.json',
+        '--json',
+      ]),
+      {
+        kind: 'runtime-host-serve',
+        managedServiceConfigPath: '/config/Vera/runtime-host-service.json',
+        json: true,
+      },
+    );
+    assert.equal(
+      parseRuntimeHostCommand([
+        'serve',
+        '--managed-service-config',
+        '/config/Vera/runtime-host-service.json',
+        '--root',
+        '/srv/vera',
+      ]).kind,
+      'error',
+    );
+    assert.equal(
+      parseRuntimeHostCommand([
+        'serve',
+        '--managed-service-config',
+        '/config/Vera/runtime-host-service.json',
+        '--peer-native-path',
+        '/opt/vera/peer.node',
+        '--peer-key',
+        '/config/Vera/peer.key',
+      ]).kind,
+      'error',
+    );
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'serve',
+        '--websocket-host',
+        '0.0.0.0',
+        '--websocket-port',
+        '7443',
+        '--allow-insecure-remote',
+      ]),
+      {
+        kind: 'runtime-host-serve',
+        json: false,
+        websocket: { host: '0.0.0.0', port: 7443, allowInsecureRemote: true },
+      },
+    );
+    assert.equal(
+      parseRuntimeHostCommand([
+        'serve',
+        '--websocket-port',
+        '7443',
+        '--allow-insecure-remote',
+        '--tls-certificate',
+        'cert.pem',
+        '--tls-private-key',
+        'key.pem',
+      ]).kind,
+      'error',
+    );
+    assert.equal(
+      parseRuntimeHostCommand(['serve', '--project-root', 'Projects=relative/path']).kind,
+      'error',
+    );
+    assert.equal(
+      parseRuntimeHostCommand([
+        'serve',
+        '--project-root',
+        `Projects=${projectRootA}`,
+        '--project-root',
+        `Projects=${projectRootB}`,
+      ]).kind,
+      'error',
+    );
+  });
+
+  test('expands access presets without access administration or Host paths', () => {
+    const desktop = resolveRuntimeHostAccessIssue(presetOptions('desktop-client'));
+    const terminal = resolveRuntimeHostAccessIssue(presetOptions('terminal-client'));
+
+    for (const resolved of [desktop, terminal]) {
+      assert.equal(resolved.principalKind, 'remote_owner');
+      assert.equal(resolved.canUseHostPaths, false);
+      assert.equal(resolved.operationGrants.includes('access.credential.issue'), false);
+      assert.equal(resolved.operationGrants.includes('access.credential.prepare'), false);
+      assert.equal(resolved.operationGrants.includes('access.credential.replace'), false);
+      assert.equal(resolved.operationGrants.includes('access.credential.revoke'), false);
+      assert.equal(resolved.operationGrants.includes('access.credential.rotation.prepare'), false);
+      assert.equal(resolved.operationGrants.includes('access.credential.rotation.revoke'), false);
+      assert.equal(resolved.operationGrants.includes('host.upgrade.prepare'), false);
+      assert.equal(resolved.operationGrants.includes('turn.start'), true);
+      assert.equal(resolved.operationGrants.includes('project.catalog.query'), true);
+    }
+    assert.equal(desktop.canPublishClientCapabilities, true);
+    assert.equal(desktop.operationGrants.includes('client.capability.replace'), true);
+    assert.equal(terminal.canPublishClientCapabilities, false);
+    assert.equal(terminal.operationGrants.includes('client.capability.replace'), false);
+    assert.equal(
+      parseRuntimeHostCommand([
+        'access',
+        'issue',
+        '--principal',
+        'desktop',
+        '--preset',
+        'desktop-client',
+        '--grant',
+        'turn.start',
+      ]).kind,
+      'error',
+    );
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'access',
+        'prepare',
+        '--current-fingerprint',
+        'a'.repeat(32),
+        '--root',
+        '/srv/vera',
+        '--expected-root',
+        'a'.repeat(64),
+        '--framed',
+      ]),
+      {
+        kind: 'runtime-host-access-prepare',
+        rootPath: '/srv/vera',
+        expectedRootId: 'a'.repeat(64),
+        currentCredentialFingerprint: 'a'.repeat(32),
+      },
+    );
+    assert.equal(
+      parseRuntimeHostCommand(['access', 'prepare', '--current-fingerprint', 'a'.repeat(32)]).kind,
+      'error',
+    );
+    assert.deepEqual(parseRuntimeHostCommand(['access', 'list', '--framed']), {
+      kind: 'runtime-host-access-list',
+      framed: true,
+    });
+    assert.deepEqual(
+      parseRuntimeHostCommand([
+        'access',
+        'revoke',
+        '--credential',
+        'credential-1',
+        '--current-fingerprint',
+        'a'.repeat(32),
+        '--framed',
+      ]),
+      {
+        kind: 'runtime-host-access-revoke',
+        credentialId: 'credential-1',
+        currentCredentialFingerprint: 'a'.repeat(32),
+        framed: true,
+      },
+    );
+    assert.deepEqual(
+      Object.keys(HOST_OPERATION_SPECS)
+        .filter(
+          (operation) =>
+            !REMOTE_OWNER_OPERATION_GRANTS.includes(
+              operation as (typeof REMOTE_OWNER_OPERATION_GRANTS)[number],
+            ),
+        )
+        .sort(),
+      [
+        'access.credential.issue',
+        'access.credential.prepare',
+        'access.credential.replace',
+        'access.credential.revoke',
+        'access.credential.rotation.prepare',
+        'access.credential.rotation.revoke',
+        'access.principal.revoke',
+        'host.upgrade.prepare',
+        'hosted.execution.cancel',
+        'hosted.execution.start',
+      ],
+    );
+  });
+
+  test('emits bounded service identity and listener facts without credentials', () => {
+    const event = createRuntimeHostServiceReadyEvent({
+      rootId: 'a'.repeat(64),
+      hostEpoch: 'epoch-1',
+      endpoint: '/tmp/vera.sock',
+      websocketEndpoints: ['wss://runtime.example.com:443/runtime-host'],
+      peerListeners: [
+        {
+          peerId: '12D3KooWPeer',
+          listenAddresses: ['/ip4/192.0.2.10/udp/4001/quic-v1/p2p/12D3KooWPeer'],
+        },
+      ],
+      compositionDescriptor: { id: 'vera.interactive', revision: '2' },
+    });
+
+    assert.deepEqual(event, {
+      schemaVersion: 1,
+      event: 'runtime_host_ready',
+      rootId: 'a'.repeat(64),
+      hostEpoch: 'epoch-1',
+      protocol: {
+        version: RUNTIME_HOST_PROTOCOL_VERSION,
+        compatibilityEpoch: RUNTIME_HOST_COMPATIBILITY_EPOCH,
+      },
+      composition: { id: 'vera.interactive', revision: '2' },
+      listeners: [
+        { kind: 'local_ipc', endpoint: '/tmp/vera.sock' },
+        {
+          kind: 'websocket',
+          tls: true,
+          host: 'runtime.example.com',
+          port: 443,
+          path: '/runtime-host',
+        },
+        {
+          kind: 'libp2p_direct',
+          peerId: '12D3KooWPeer',
+          listenAddresses: ['/ip4/192.0.2.10/udp/4001/quic-v1/p2p/12D3KooWPeer'],
+        },
+      ],
+    });
+    assert.equal(JSON.stringify(event).includes('credential'), false);
+  });
+
+  test('registers a Project without preferring it unless explicitly requested', async () => {
+    let closeCount = 0;
+    const requests: unknown[] = [];
+    const connection = {
+      request: async (operation: string, input: unknown) => {
+        requests.push({ operation, input });
+        return {
+          kind: 'project',
+          project: {
+            id: 'project-1',
+            aliases: [],
+            name: 'project',
+            locationCount: 1,
+            archivedAt: null,
+            available: true,
+          },
+        };
+      },
+      close: async () => {
+        closeCount += 1;
+      },
+    } as unknown as RuntimeHostConnection;
+    const output: string[] = [];
+    const commands = [
+      { kind: 'add' as const, rootPath: '/srv/vera', path: 'project', prefer: false },
+      { kind: 'add' as const, rootPath: '/srv/vera', path: 'project', prefer: true },
+    ];
+
+    for (const command of commands) {
+      assert.equal(
+        await runRuntimeHostProjectCli(command, {
+          connect: async () => connection,
+          write: (value) => output.push(value),
+        }),
+        0,
+      );
+    }
+    assert.deepEqual(requests, [
+      {
+        operation: 'project.catalog.mutate',
+        input: { kind: 'register', path: resolve('project'), prefer: false },
+      },
+      {
+        operation: 'project.catalog.mutate',
+        input: { kind: 'register', path: resolve('project'), prefer: true },
+      },
+    ]);
+    assert.equal(closeCount, 2);
+    assert.deepEqual(
+      output.map((value) => (JSON.parse(value) as { project: { id: string } }).project.id),
+      ['project-1', 'project-1'],
+    );
+  });
+});
+
+function presetOptions(
+  preset: 'desktop-client' | 'terminal-client',
+): RuntimeHostAccessIssueOptions {
+  return {
+    rootPath: '/srv/vera',
+    principalKind: 'remote_owner',
+    principalId: preset,
+    operationGrants: [],
+    canPublishClientCapabilities: false,
+    canUseHostPaths: false,
+    preset,
+  };
+}

@@ -1,0 +1,24 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "paths": {
+      "@vera/ui": ["../vera-ui/src/index.ts"],
+      "@vera/ui/icons": ["../vera-ui/src/icons.tsx"],
+      "@vera/ui/artifact-preview-registry": ["../vera-ui/src/artifact-preview-registry.ts"],
+      "@vera/ui/assistant-stream": ["../vera-ui/src/assistant-stream.ts"],
+      "@vera/ui/vera-uri": ["../vera-ui/src/vera-uri.ts"],
+    }
+  },
+  "include": [
+    ".storybook/**/*.ts",
+    ".storybook/**/*.tsx",
+    "stories/**/*.ts",
+    "stories/**/*.tsx",
+    "src/global.d.ts",
+    "../vera-ui/stories/**/*.ts",
+    "../vera-ui/stories/**/*.tsx"
+  ]
+}

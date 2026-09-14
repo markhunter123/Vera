@@ -1,0 +1,272 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Planning and every selected Linux surface share one runner, so the core
+  # workflow consumes one automatic job without dropping affected coverage.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: plan
+        name: Select affected test surfaces
+        env:
+          BASE_SHA: ${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.head.sha }}
+        run: |
+          # PR checks may predate later main changes, so the single core job also
+          # validates the exact merged delta. Dispatches and unavailable history
+          # fail safe to every surface.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || [[ "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
+            node scripts/ci-test-plan.mjs --full >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-test-plan.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test CI planner
+        run: node --test --test-concurrency=1 scripts/ci-test-plan.test.mjs scripts/verify-windows-harness.test.mjs
+
+      # Pure Node like the planner test, and the labelling workflow imports this
+      # module directly, so a tier or exclusion change is caught here rather
+      # than by mislabelling live pull requests.
+      - name: Test PR effort classification
+        run: node --test --test-concurrency=1 scripts/pr-effort.test.mjs
+
+      # Same shape and the same needs: a regenerate-and-diff contract that runs
+      # on Node alone, so it belongs beside the planner test rather than behind
+      # an install.
+      - name: Check Windows test inventory
+        run: npm run windows:inventory
+
+      # Runs on the PR merge result: after a sibling protocol change lands on
+      # main with the same epoch text, the silently merged tree still carries
+      # the current base parent's epoch and this fails instead of shipping two
+      # incompatible protocols under one number (#3313).
+      - name: Guard the protocol compatibility epoch
+        if: github.event_name == 'pull_request'
+        run: node scripts/protocol-epoch-check.mjs --base 'HEAD^1'
+
+      - name: Test the epoch guard
+        run: node --test --test-concurrency=1 scripts/protocol-epoch-check.test.mjs
+
+      - name: Test AX tree audit contract
+        run: node --test scripts/ax-tree-audit.test.mjs
+
+      - name: Verify ASF npm preflight policy
+        run: npm run check:asf-npm
+
+      # The source-header gate has to see every file that lands, not only the
+      # files an affected surface selects, so it runs unconditionally beside
+      # the other install-free checks.
+      - name: Check ASF source headers
+        run: npm run check:asf-headers
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.plan.outputs.code == 'true' || steps.plan.outputs.astryx_surface == 'true' || steps.plan.outputs.asf_source == 'true' || steps.plan.outputs.cli_package == 'true' || steps.plan.outputs.release_contract == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Select the release npm toolchain
+        if: steps.plan.outputs.cli_package == 'true'
+        run: npm install --global --no-audit --no-fund "$(node -p 'require("./package.json").packageManager')"
+
+      - name: Restore Electron artifact cache
+        if: steps.plan.outputs.code == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - name: Install Linux runtime dependencies
+        if: steps.plan.outputs.runtime_sandbox == 'true'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep bubblewrap
+
+      # Ubuntu 24.04 hosted runners gate unprivileged user namespaces through
+      # AppArmor, which otherwise makes bwrap fail while configuring loopback.
+      - name: Enable bubblewrap user namespaces
+        if: steps.plan.outputs.runtime_sandbox == 'true'
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if [[ -e /proc/sys/kernel/unprivileged_userns_clone ]]; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+
+      - name: Install dependencies
+        if: steps.plan.outputs.code == 'true' || steps.plan.outputs.asf_source == 'true' || steps.plan.outputs.cli_package == 'true' || steps.plan.outputs.release_contract == 'true'
+        run: npm ci
+
+      # The header audit above remains install-free. The complete source gate
+      # also exercises generation and therefore runs after its pinned formatter
+      # dependency is installed, matching the source-candidate workflow.
+      - name: Verify ASF source release mechanics
+        if: steps.plan.outputs.asf_source == 'true'
+        run: npm run check:asf-source
+
+      - name: Lint
+        if: steps.plan.outputs.code == 'true'
+        run: npm run lint
+
+      - name: Check formatting
+        if: steps.plan.outputs.code == 'true'
+        run: npm run format:check
+
+      # This generated artifact describes the whole renderer/UI tree, so every
+      # code-validation run checks it even when the triggering diff is outside
+      # an Astryx surface. Keep it before Build so stale output is reported
+      # directly instead of being hidden behind an earlier compilation failure.
+      - name: Astryx surface inventory
+        if: steps.plan.outputs.code == 'true' || steps.plan.outputs.astryx_surface == 'true'
+        run: npm run astryx:surface-inventory
+
+      - name: Build
+        if: steps.plan.outputs.code == 'true' || steps.plan.outputs.cli_package == 'true' || steps.plan.outputs.release_contract == 'true'
+        run: npm run build
+
+      - name: Release contracts
+        if: steps.plan.outputs.release_contract == 'true'
+        run: npm run check:release
+
+      - name: Typecheck
+        if: steps.plan.outputs.code == 'true'
+        run: npm run typecheck
+
+      # Two drift contracts over the shipped app-icon artwork, sitting beside
+      # the theme drift check for the same reason: the committed bytes are a
+      # build output that nothing else re-derives, so without this a change to
+      # the generator, to DEFAULT_APP_ICON, or to the packaging config can go
+      # green while the artwork it names no longer matches.
+      - name: App icon artwork drift
+        if: steps.plan.outputs.code == 'true'
+        run: node --test scripts/verify-packaged-app-icons.test.mjs scripts/generate-app-icons.test.mjs
+
+      - name: Astryx theme drift
+        if: steps.plan.outputs.code == 'true'
+        run: npm run astryx:theme -- --check
+
+      - name: Knip (vera-desktop)
+        if: steps.plan.outputs.code == 'true'
+        run: npx knip --workspace vera-desktop
+
+      - name: Knip (vera-ui)
+        if: steps.plan.outputs.code == 'true'
+        run: npx knip --workspace vera-ui
+
+      - name: Linux sandbox smoke
+        if: steps.plan.outputs.runtime_sandbox == 'true'
+        env:
+          VERA_REQUIRE_LINUX_SANDBOX_SMOKE: '1'
+        run: npm exec -w @vera/runtime -- node --test dist/__tests__/linux-sandbox-smoke.test.js
+
+      - name: Run affected standard workspace tests
+        if: steps.plan.outputs.standard_workspaces != ''
+        env:
+          STORAGE_STRESS: ${{ steps.plan.outputs.storage_stress }}
+          WORKSPACES: ${{ steps.plan.outputs.standard_workspaces }}
+        run: |
+          if [[ "$STORAGE_STRESS" == "true" ]]; then
+            export VERA_STORAGE_STRESS=1
+          fi
+          node scripts/run-workspace-tests-parallel.mjs --concurrency=3 --workspaces="$WORKSPACES"
+
+      - name: Run live Eval egress proxy test
+        if: contains(steps.plan.outputs.standard_workspaces, 'vera-eval')
+        env:
+          VERA_EVAL_EGRESS_PROXY_TEST: '1'
+        run: |
+          docker pull python:3.12-slim
+          docker build \
+            --tag vera-eval-egress-proxy:12.2.3 \
+            --file vera-eval/harbor/egress-proxy/Dockerfile \
+            vera-eval/harbor
+          npm --workspace @vera/eval run test:egress-proxy:live
+
+      - name: Run Runtime Host tests
+        if: steps.plan.outputs.runtime_host == 'true'
+        run: npm --workspace @vera/runtime-host run test:dist
+
+      - name: Ensure xvfb
+        if: steps.plan.outputs.e2e == 'true'
+        run: command -v xvfb-run >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y xvfb; }
+
+      - name: Desktop e2e
+        if: steps.plan.outputs.e2e == 'true'
+        run: xvfb-run -a npm exec -w @vera/desktop -- playwright test --config e2e/playwright.config.ts
+
+      - name: Browser WebContentsView semantic smoke
+        if: steps.plan.outputs.e2e == 'true'
+        # Hosted Linux runners cannot configure Electron's SUID helper. This
+        # smoke loads only its loopback fixture; production stays sandboxed.
+        run: xvfb-run -a npm exec --workspace @vera/desktop -- electron --no-sandbox scripts/browser-observe-act-smoke.mjs
+
+      - name: Alignment audit
+        if: steps.plan.outputs.e2e == 'true'
+        run: xvfb-run -a node scripts/audit-alignment.mjs
+
+      - name: Install Playwright Chromium
+        if: steps.plan.outputs.storybook == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Storybook
+        if: steps.plan.outputs.storybook == 'true'
+        run: npm --workspace @vera/desktop run build-storybook
+
+      - name: Storybook smoke
+        if: steps.plan.outputs.storybook == 'true'
+        run: npm --workspace @vera/desktop run smoke:storybook
+
+      - name: Update stable Rust for CLI packaging
+        if: steps.plan.outputs.cli_package == 'true'
+        run: rustup update stable --no-self-update
+
+      - name: Install cargo-deny for CLI packaging
+        if: steps.plan.outputs.cli_package == 'true'
+        uses: taiki-e/install-action@fcf5432d9f50d67e37ee6e29bdb7a224ff67b4a7 # v2
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Build CLI release candidate
+        if: steps.plan.outputs.cli_package == 'true'
+        run: npm run release:cli:pack -- --allow-dirty
+
+      - name: Validate installed CLI release candidate
+        if: steps.plan.outputs.cli_package == 'true'
+        run: npm run release:cli:smoke -- vera-cli/release/*.tgz
