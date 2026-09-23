@@ -64,7 +64,6 @@ import type {
 import { abortableDelay } from './abortable-delay.js';
 import { exceedsFrameCap, FRAME_COMPRESS_THRESHOLD_BYTES } from './frame-budget.js';
 import {
-  VERA_CU_ALLOW_GLOBAL_POINTER,
   VERA_CU_ELEMENT_ACTIONS,
   hostDigest,
   mapVeraCuDomainError,
@@ -157,6 +156,12 @@ export interface VeraCuBackendOptions {
   /** Test seam: the protocol string sent in `host.hello`. */
   protocolVersion?: string;
   /**
+   * Interpreter to spawn the binary through (argv `[interpreter, binary,
+   * 'host']`). Test-only seam: the mock executor is a script file, which
+   * Windows cannot CreateProcess directly. Production passes nothing.
+   */
+  interpreterPath?: string;
+  /**
    * Optional frame compressor: given a captured frame returns a smaller
    * encoding at the SAME resolution, so coordinates are unchanged. Applied only
    * to large frames; omitted under node --test, where frames pass through.
@@ -177,6 +182,13 @@ export interface VeraCuBackendOptions {
    * otherwise — the model-facing tool contract already states these fail closed.
    */
   allowCompatibilityInputDispatch?: boolean;
+  /**
+   * Declared at handshake, verified on every dispatch answer: a platform whose
+   * only pointer path moves the system cursor (Windows) must set this, because
+   * its executor answers `path: "cg_event_global"` and the reader refuses that
+   * path without the declaration (§6.3).
+   */
+  allowGlobalPointer?: boolean;
   /**
    * Diagnostics: geometry, enums and counts, never app text — with the single
    * declared exception of `host_error.detail`, which exists so that raw failure
@@ -812,6 +824,9 @@ class VeraCuHostRefusal extends Error {
 
 export function createVeraCuBackend(opts: VeraCuBackendOptions): VeraCuBackend {
   const imageDir = opts.imageDir ?? join(tmpdir(), `vera-cu-images-${process.pid}-${randomUUID()}`);
+  // Held once: every dispatch answer runs through the same handshake
+  // declaration, and a per-call default would let the two arms drift.
+  const allowGlobalPointer = opts.allowGlobalPointer ?? false;
   const snapshots = new Map<string, StoredSnapshot>();
   const snapshotIdsBySession = new Map<string, string[]>();
   /** Why each forgotten observation id stopped resolving; see `forgetSnapshot`. */
@@ -884,6 +899,10 @@ export function createVeraCuBackend(opts: VeraCuBackendOptions): VeraCuBackend {
       ? {}
       : { expectedBinarySha256: opts.expectedBinarySha256 }),
     ...(opts.protocolVersion === undefined ? {} : { protocolVersion: opts.protocolVersion }),
+    ...(opts.interpreterPath === undefined ? {} : { interpreterPath: opts.interpreterPath }),
+    ...(opts.allowGlobalPointer === undefined
+      ? {}
+      : { allowGlobalPointer: opts.allowGlobalPointer }),
     onRelease: (event) => {
       if (event.reason === 'disposed') return;
       if (event.reason === 'session_cleared' && sessionClearReleaseEvents) {
@@ -1754,7 +1773,7 @@ export function createVeraCuBackend(opts: VeraCuBackendOptions): VeraCuBackend {
     // §1.1/§6.5: `outcome` selects the arm, and `readDispatchResult` rejects a
     // disagreement — an `ok: true` result may only say `outcome: "ok"`, and a
     // refusal arrives on the other arm carrying the same four fields.
-    const result = readDispatchResult(method, envelope, VERA_CU_ALLOW_GLOBAL_POINTER);
+    const result = readDispatchResult(method, envelope, allowGlobalPointer);
     trace({
       type: 'dispatch',
       ...(context.toolCallId ? { toolCallId: context.toolCallId } : {}),
@@ -2093,7 +2112,7 @@ export function createVeraCuBackend(opts: VeraCuBackendOptions): VeraCuBackend {
     context: CuRunContext,
     attempt?: DispatchAttempt,
   ): CuRunResult {
-    const refusal = readDispatchResult(method, envelope, VERA_CU_ALLOW_GLOBAL_POINTER);
+    const refusal = readDispatchResult(method, envelope, allowGlobalPointer);
     forgetUnusableSnapshot(envelope.error, snapshot);
     return domainFailure(method, envelope.error, context.toolCallId, refusal, attempt);
   }

@@ -271,6 +271,7 @@ export function PermissionCenterPage() {
               <OsPermissionRow
                 key={id}
                 snapshot={permissions.permissions[id]}
+                platform={permissions.platform}
                 copy={copy}
                 locale={locale}
                 busy={pendingPermAction !== null}
@@ -572,6 +573,7 @@ function CapabilityRow(props: {
 
 function OsPermissionRow(props: {
   snapshot: OsPermissionSnapshot;
+  platform: PermissionSnapshot['platform'];
   copy: PermissionCenterCopy;
   locale: UiLocale;
   busy: boolean;
@@ -581,7 +583,14 @@ function OsPermissionRow(props: {
   onDragGrant: () => void;
 }) {
   const { snapshot, busy, pendingKey } = props;
-  const permissionCopy = props.copy.osPermissions[snapshot.id];
+  // Platform-specific wording rides as a sparse override (see
+  // PermissionCenterCopy.osPermissions): macOS is the base, Windows merges
+  // its variant over it, and the snapshot's own `reason` carries the rest.
+  const baseCopy = props.copy.osPermissions[snapshot.id];
+  const permissionCopy =
+    baseCopy && props.platform === 'win32' && baseCopy.windows
+      ? { ...baseCopy, ...baseCopy.windows }
+      : baseCopy;
   const Icon = OS_PERMISSION_ICONS[snapshot.id];
   const label = permissionCopy?.label ?? snapshot.id;
   const purpose = permissionCopy?.purpose ?? '';

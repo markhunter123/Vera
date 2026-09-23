@@ -29,10 +29,18 @@ import type { UiCatalog, UiLocale } from '@vera/core/ui-locale';
 
 type Tone = StatusSemantic;
 type StatusCopy = { label: string; tone: Tone };
+type OsPermissionCopy = { label: string; purpose: string; impact: string };
 
 export type PermissionCenterCopy = {
   readiness: Record<CapabilityReadinessState, StatusCopy & { detail: string }>;
-  osPermissions: Record<OsPermissionId, { label: string; purpose: string; impact: string }>;
+  /**
+   * Per-permission copy. Most entries read correctly on every platform — the
+   * platform-specific security model comes from the snapshot's own `reason`.
+   * `windows` is a sparse override for the rare entry whose macOS wording is
+   * simply wrong elsewhere (Automation is Apple Events on macOS, UIA on
+   * Windows), merged over the base by the row renderer.
+   */
+  osPermissions: Record<OsPermissionId, OsPermissionCopy & { windows?: Partial<OsPermissionCopy> }>;
   osStates: Record<OsPermissionState, StatusCopy>;
   loading: string;
   readFailed: string;
@@ -109,7 +117,15 @@ const PERMISSION_CENTER_COPY = {
       accessibility: { label: '辅助功能', purpose: 'Computer Use 需要它来读取窗口焦点 / 模拟键盘鼠标。', impact: 'Computer Use · 自动化键鼠操作' },
       screen_recording: { label: '屏幕录制', purpose: 'Computer Use 需要它来读取窗口内容；未来屏幕活动录制也会使用。', impact: 'Computer Use · 截屏上下文' },
       notifications: { label: '通知', purpose: '权限申请、回顾完成等系统通知需要它。', impact: '权限申请提醒 · 每日回顾完成通知' },
-      automation: { label: '自动化（Apple Events）', purpose: 'Computer Use 控制其他 App 需要逐 target 授权。', impact: 'Computer Use · 跨 App 自动化' },
+      automation: {
+        label: '自动化（Apple Events）',
+        purpose: 'Computer Use 控制其他 App 需要逐 target 授权。',
+        impact: 'Computer Use · 跨 App 自动化',
+        windows: {
+          label: '自动化（UIA）',
+          purpose: 'Computer Use 通过 UIA（UI Automation）读取和操控其他应用，无逐 App 授权。',
+        },
+      },
     },
     osStates: {
       unsupported: { label: '当前平台不支持', tone: 'neutral' }, unknown: { label: '无法读取状态', tone: 'neutral' },
@@ -123,15 +139,15 @@ const PERMISSION_CENTER_COPY = {
       unsupported_permission: '当前平台没有提供这个权限的直接入口。',
       denied: '你没有授予这项权限；可以前往系统设置重新开启。',
       already_open: '另一个权限引导仍在进行，请先完成或关闭它。',
-      open_settings_failed: '无法打开系统设置，请手动前往「隐私与安全性」。',
+      open_settings_failed: '无法打开系统设置，请手动前往对应设置页。',
       failed: '权限操作未成功，请稍后重试。',
     },
-    title: '权限与能力', subtitle: '查看 Vera 需要的系统权限和当前授权状态，直接从这里前往「系统设置 → 隐私与安全性」完成授权或撤销，不必自己翻菜单。',
+    title: '权限与能力', subtitle: '查看 Vera 需要的系统权限和当前授权状态，需要授权时从这里直接前往对应的系统设置页，不必自己翻菜单。',
     lastRead: '最近读取：', detectAgain: '重新检测', summaryAria: '按授权状态筛选系统权限', summaryFilterAria: (label, count, selected) => selected ? `${label} ${count} 项，当前筛选；再次按下显示全部` : `仅显示${label}权限，共 ${count} 项`, granted: '已授权', pending: '等待授权', denied: '已拒绝', other: '未知 / 不支持',
-    osSection: '系统权限', osSectionHelp: 'Vera 读到的 OS 级权限状态。点击右侧按钮可以直接前往「系统设置 → 隐私与安全性」对应分区。', osListAria: '系统权限列表',
+    osSection: '系统权限', osSectionHelp: 'Vera 读到的 OS 级权限状态。需要授权的项可以点击右侧按钮直接前往对应的系统设置页。', osListAria: '系统权限列表',
     capabilitiesSection: '功能能力', capabilitiesHelp: '每个能力的就绪状态由「功能开关 · 配置 · 系统权限 · 运行态探测」共同决定。',
     capabilityListAria: '功能能力列表',
-    footnote: 'Vera 不会自动授予 Accessibility、Automation 或 Screen Recording。高风险自动化能力必须保持逐项审批、可审计、可撤销。这里只读取系统权限与功能能力的当前快照，授权变更仍需在「系统设置 → 隐私与安全性」完成。',
+    footnote: 'Vera 不会自动越过系统权限边界。高风险自动化能力必须保持逐项审批、可审计、可撤销。这里只读取系统权限与功能能力的当前快照，授权变更仍需在系统设置中完成。',
     layers: {
       aria: (label) => `${label}能力状态明细`, feature: '功能开关', configuration: '配置', approval: '操作审批', memory: '记忆写入', runtime: '运行态探测',
       featureStates: { enabled: '已开启', partial: '部分可用', disabled: '已关闭', not_available: '未开放' },
@@ -156,7 +172,15 @@ const PERMISSION_CENTER_COPY = {
       accessibility: { label: 'Accessibility', purpose: 'Computer Use needs it to read window focus and simulate keyboard or mouse input.', impact: 'Computer Use · automated keyboard and mouse input' },
       screen_recording: { label: 'Screen Recording', purpose: 'Computer Use needs it to read window contents; future screen activity recording will use it too.', impact: 'Computer Use · screenshot context' },
       notifications: { label: 'Notifications', purpose: 'System alerts use it for permission requests and completed reviews.', impact: 'Permission alerts · Daily Review completion' },
-      automation: { label: 'Automation (Apple Events)', purpose: 'Computer Use needs per-target authorization to control other apps.', impact: 'Computer Use · cross-app automation' },
+      automation: {
+        label: 'Automation (Apple Events)',
+        purpose: 'Computer Use needs per-target authorization to control other apps.',
+        impact: 'Computer Use · cross-app automation',
+        windows: {
+          label: 'Automation (UIA)',
+          purpose: 'Computer Use reads and drives other apps through UIA (UI Automation); there is no per-app authorization.',
+        },
+      },
     },
     osStates: {
       unsupported: { label: 'Unsupported on this platform', tone: 'neutral' }, unknown: { label: 'Status unavailable', tone: 'neutral' },
@@ -170,15 +194,15 @@ const PERMISSION_CENTER_COPY = {
       unsupported_permission: 'This platform does not provide a direct entry point for the permission.',
       denied: 'Permission was not granted. You can enable it in System Settings.',
       already_open: 'Another permission guide is still open. Finish or close it first.',
-      open_settings_failed: 'Could not open System Settings. Open Privacy & Security manually.',
+      open_settings_failed: 'Could not open system settings. Open the matching pane manually.',
       failed: 'The permission action did not succeed. Try again later.',
     },
-    title: 'Permissions and capabilities', subtitle: 'Review the system permissions Vera needs and their current state. Open the matching Privacy & Security section directly to grant or revoke access.',
+    title: 'Permissions and capabilities', subtitle: 'Review the system permissions Vera needs and their current state. Open the matching system settings page directly to grant or revoke access.',
     lastRead: 'Last read: ', detectAgain: 'Check again', summaryAria: 'Filter system permissions by authorization status', summaryFilterAria: (label, count, selected) => selected ? `${label}, ${count}; filter selected. Press again to show all permissions` : `Show only ${label.toLowerCase()} permissions, ${count}`, granted: 'Granted', pending: 'Waiting', denied: 'Denied', other: 'Unknown / unsupported',
-    osSection: 'System permissions', osSectionHelp: 'OS-level permission states reported to Vera. Use the action on the right to open the matching Privacy & Security section in System Settings.', osListAria: 'System permission list',
+    osSection: 'System permissions', osSectionHelp: 'OS-level permission states reported to Vera. For entries that need authorization, use the action on the right to open the matching system settings page.', osListAria: 'System permission list',
     capabilitiesSection: 'Feature capabilities', capabilitiesHelp: 'Each readiness state combines the feature toggle, configuration, system permissions, and runtime probe.',
     capabilityListAria: 'Feature capability list',
-    footnote: 'Vera never grants Accessibility, Automation, or Screen Recording automatically. High-risk automation must remain individually approved, auditable, and revocable. This page only reads the current snapshot; permission changes still happen in System Settings under Privacy & Security.',
+    footnote: 'Vera never gets itself past the OS permission boundary automatically. High-risk automation must remain individually approved, auditable, and revocable. This page only reads the current snapshot; permission changes still happen in system settings.',
     layers: {
       aria: (label) => `${label} capability state details`, feature: 'Feature toggle', configuration: 'Configuration', approval: 'Action approval', memory: 'Memory writes', runtime: 'Runtime probe',
       featureStates: { enabled: 'Enabled', partial: 'Partially available', disabled: 'Disabled', not_available: 'Unavailable' },

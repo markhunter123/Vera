@@ -71,6 +71,16 @@ const MACOS_DEEP_LINKS: Record<OsPermissionId, string | null> = {
   notifications: 'x-apple.systempreferences:com.apple.preference.notifications',
 };
 
+/**
+ * Windows ms-settings deep-link targets. Only notifications has a pane worth
+ * linking: the other three permissions have no OS authorization surface on
+ * Windows at all (their snapshots report `granted` with a UIPI reason), so
+ * there is nothing to open.
+ */
+const WINDOWS_DEEP_LINKS: Partial<Record<OsPermissionId, string>> = {
+  notifications: 'ms-settings:notifications',
+};
+
 function normalizePermissionId(input: unknown): OsPermissionId | null {
   if (typeof input !== 'string') return null;
   return (OS_PERMISSION_IDS as readonly string[]).includes(input)
@@ -81,10 +91,12 @@ function normalizePermissionId(input: unknown): OsPermissionId | null {
 export async function openSystemPermissionPane(input: unknown): Promise<PermissionActionResult> {
   const id = normalizePermissionId(input);
   if (!id) return { ok: false, reason: 'invalid_id' };
-  if (process.platform !== 'darwin') {
-    return { ok: false, reason: 'unsupported_platform' };
-  }
-  const url = MACOS_DEEP_LINKS[id];
+  const url =
+    process.platform === 'darwin'
+      ? MACOS_DEEP_LINKS[id]
+      : process.platform === 'win32'
+        ? WINDOWS_DEEP_LINKS[id] ?? null
+        : null;
   if (!url) return { ok: false, reason: 'unsupported_permission' };
   try {
     await shell.openExternal(url);

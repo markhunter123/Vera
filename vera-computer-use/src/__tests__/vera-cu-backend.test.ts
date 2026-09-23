@@ -412,6 +412,7 @@ function makeBackend(
     windowOriginY?: number;
     physicalInputRecentlyActive?: VeraCuBackendOptions['physicalInputRecentlyActive'];
     allowCompatibilityInputDispatch?: boolean;
+    allowGlobalPointer?: boolean;
     onTrace?: VeraCuBackendOptions['onTrace'];
   } = {},
 ): { backend: ReturnType<typeof createVeraCuBackend>; logPath: string; imageDir: string } {
@@ -448,6 +449,9 @@ function makeBackend(
   process.env.VERACU_MOCK_WINDOW_ORIGIN_Y = String(opts.windowOriginY ?? 25);
   const backend = createVeraCuBackend({
     binaryPath: mockPath,
+    // Same .cjs-through-an-interpreter story as the service test: Windows
+    // cannot CreateProcess a script file directly.
+    ...(process.platform === 'win32' ? { interpreterPath: process.execPath } : {}),
     imageDir,
     timeoutMs: opts.timeoutMs ?? 5000,
     handshakeTimeoutMs: 5000,
@@ -459,6 +463,7 @@ function makeBackend(
     ...(opts.allowCompatibilityInputDispatch === undefined
       ? {}
       : { allowCompatibilityInputDispatch: opts.allowCompatibilityInputDispatch }),
+    ...(opts.allowGlobalPointer === undefined ? {} : { allowGlobalPointer: opts.allowGlobalPointer }),
     ...(opts.onTrace ? { onTrace: opts.onTrace } : {}),
   });
   disposers.push(() => backend.dispose());
@@ -798,6 +803,25 @@ describe('vera-cu backend', () => {
       traces.find((event) => event.type === 'protocol_violation')?.reason ?? '',
       /moves the system cursor/,
     );
+  });
+
+  it('passes a global-pointer path the handshake declared', async () => {
+    // §6.3, the Windows shape: the executor's only pointer path moves the
+    // system cursor, so a host that wants point dispatch must have said so at
+    // hello — and then cg_event_global is exactly the honest answer.
+    const { backend } = makeBackend({
+      tier: 'coordinate-background',
+      path: 'cg_event_global',
+      allowCompatibilityInputDispatch: true,
+      allowGlobalPointer: true,
+    });
+    const observation = await observeFixture(backend);
+    const result = await backend.run(
+      { type: 'left_click', coordinate: { x: 400, y: 200 } },
+      signal(),
+      { ...RUN_CONTEXT, boundAction: boundCoordinate(observation) },
+    );
+    assert.ok(result.outcome.ok, JSON.stringify(result.outcome));
   });
 
   it('anchors a coordinate dispatch to the window digest in image pixels', async () => {

@@ -79,6 +79,11 @@ export interface VeraCuSelection {
   backendId?: 'vera-cu';
   binaryPath?: string;
   expectedBinarySha256?: string;
+  /**
+   * Injectable platform, so the win32 branch is reachable from tests running on
+   * a darwin CI host. Omitted means the host's own platform decides.
+   */
+  platform?: NodeJS.Platform;
   compressFrame?: (
     base64: string,
     mimeType: string,
@@ -97,13 +102,19 @@ export interface VeraCuSelection {
    * says otherwise; the model-facing contract already states they fail closed.
    */
   allowCompatibilityInputDispatch?: boolean;
+  /**
+   * Windows passes this with the same policy: its only pointer path moves the
+   * system cursor, so the handshake must declare it or point dispatch is dead.
+   */
+  allowGlobalPointer?: boolean;
   createBackend?: (options: VeraCuBackendOptions) => DisposableBackend;
 }
 
 export type ComputerUseBackendSelection = VeraCuSelection;
 
 export function selectComputerUseBackend(deps?: VeraCuSelection): SelectedComputerUseBackend {
-  if (process.platform !== 'darwin') return NONE;
+  const platform = deps?.platform ?? process.platform;
+  if (platform !== 'darwin' && platform !== 'win32') return NONE;
   if (!deps?.binaryPath || !deps.expectedBinarySha256) return NONE;
   const binaryPath = deps.binaryPath;
   const expectedBinarySha256 = deps.expectedBinarySha256;
@@ -120,6 +131,9 @@ export function selectComputerUseBackend(deps?: VeraCuSelection): SelectedComput
       ...(deps.allowCompatibilityInputDispatch === undefined
         ? {}
         : { allowCompatibilityInputDispatch: deps.allowCompatibilityInputDispatch }),
+      ...(deps.allowGlobalPointer === undefined
+        ? {}
+        : { allowGlobalPointer: deps.allowGlobalPointer }),
       onSessionInvalidated: ({ sessionId }) => {
         tools?.sessionEvents.reobserveRequired(sessionId);
       },

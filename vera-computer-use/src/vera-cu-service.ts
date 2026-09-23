@@ -209,6 +209,20 @@ export interface VeraCuServiceOptions {
   expectedBinarySha256?: string;
   /** Test seam: the protocol string sent in `host.hello`. */
   protocolVersion?: string;
+  /**
+   * The `allowGlobalPointer` value sent in `host.hello` (§2/§6.3). The constant
+   * is the only value Vera ships on macOS; a platform whose only pointer path
+   * moves the system cursor must declare `true` at handshake or the executor's
+   * `cg_event_global` answers are refused as protocol violations.
+   */
+  allowGlobalPointer?: boolean;
+  /**
+   * Spawn as `[interpreterPath, binaryPath, 'host']` instead of
+   * `[binaryPath, 'host']`. Test seam: a mock executor is a script file, and
+   * CreateProcess cannot exec a script directly (§11's "direct child" is about
+   * process ancestry, not about the argv head).
+   */
+  interpreterPath?: string;
   onRelease?: (event: VeraCuReleaseEvent) => void;
 }
 
@@ -387,7 +401,10 @@ export class VeraCuService {
     // the host reported an exhausted restart budget rather than a wrong argv.
     // §11 said "spawns the executor as a direct child" and did not say with
     // what, so the two sides each picked, and disagreed.
-    const child = spawn(executablePath, ['host'], {
+    const argv = this.opts.interpreterPath
+      ? [executablePath, 'host']
+      : ['host'];
+    const child = spawn(this.opts.interpreterPath ?? executablePath, argv, {
       stdio: ['pipe', 'pipe', 'pipe'],
       // §13: no env-var behaviour switches. Everything behavioural is a
       // `host.hello` parameter, so the wire says what the executor will do.
@@ -435,7 +452,7 @@ export class VeraCuService {
         host: { name: 'vera', version: this.opts.hostVersion },
         hostPid: process.pid,
         imageDir: this.opts.imageDir,
-        allowGlobalPointer: VERA_CU_ALLOW_GLOBAL_POINTER,
+        allowGlobalPointer: this.opts.allowGlobalPointer ?? VERA_CU_ALLOW_GLOBAL_POINTER,
       },
       { timeoutMs },
     );

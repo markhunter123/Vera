@@ -43,6 +43,7 @@ import {
   mediaPermissionActions,
   supportsMediaPermissionProbe,
 } from './os-permission-policy.js';
+import { windowsOsPermissionSnapshot } from './windows-permission-policy.js';
 
 const MAC_TCC_PERMISSIONS: OsPermissionId[] = ['accessibility', 'screen_recording', 'automation'];
 
@@ -274,6 +275,7 @@ function botCapability(
 }
 
 function accessibilitySnapshot(now: number, platform: NodeJS.Platform): OsPermissionSnapshot {
+  if (platform === 'win32') return windowsOsPermissionSnapshot('accessibility', now);
   if (platform !== 'darwin') return unsupportedPermission('accessibility', now, '仅 macOS TCC 权限适用');
   try {
     const granted = systemPreferences.isTrustedAccessibilityClient(false);
@@ -297,6 +299,7 @@ function mediaPermissionSnapshot(
   now: number,
   platform: NodeJS.Platform,
 ): OsPermissionSnapshot {
+  if (platform === 'win32') return windowsOsPermissionSnapshot(id, now);
   if (!supportsMediaPermissionProbe(id, platform)) {
     return unsupportedPermission(
       id,
@@ -320,6 +323,7 @@ function mediaPermissionSnapshot(
 }
 
 function notificationSnapshot(now: number, platform: NodeJS.Platform): OsPermissionSnapshot {
+  if (platform === 'win32') return windowsOsPermissionSnapshot('notifications', now);
   const supported = Notification.isSupported();
   return {
     id: 'notifications',
@@ -340,6 +344,7 @@ function notificationSnapshot(now: number, platform: NodeJS.Platform): OsPermiss
 }
 
 function automationSnapshot(now: number, platform: NodeJS.Platform): OsPermissionSnapshot {
+  if (platform === 'win32') return windowsOsPermissionSnapshot('automation', now);
   if (platform !== 'darwin') return unsupportedPermission('automation', now, '仅 macOS TCC 权限适用');
   return {
     id: 'automation',

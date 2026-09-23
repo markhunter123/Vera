@@ -69,6 +69,12 @@ export function createComputerUseHost(input: {
   onTrace?: VeraCuBackendOptions['onTrace'];
   overlay?: CuOverlayHook;
 }): ComputerUseHostState {
+  // One executor per platform: the Swift `vera-cu` on macOS, the Rust
+  // `vera-cu-windows` elsewhere — each pinned under its own manifest key.
+  const bundled =
+    process.platform === 'win32'
+      ? { name: 'vera-cu-windows.exe', manifestKey: 'veraCuWindows' as const }
+      : { name: 'vera-cu', manifestKey: 'veraCu' as const };
   const manifestPath = input.manifestPath ?? (input.isPackaged
     ? join(input.resourcesPath, 'bundled-tools.json')
     : resolve(
@@ -78,14 +84,14 @@ export function createComputerUseHost(input: {
         'bundled-tools.json',
       ));
   const binaryPath = input.binaryPath ?? (input.isPackaged
-    ? join(input.resourcesPath, 'bin', 'vera-cu')
+    ? join(input.resourcesPath, 'bin', bundled.name)
     : resolve(
         dirname(fileURLToPath(import.meta.url)),
         '..',
         '..',
         'resources',
         'bin',
-        'vera-cu',
+        bundled.name,
       ));
   try {
     const manifest = JSON.parse(readRegularFile(manifestPath).toString('utf8')) as {
@@ -93,9 +99,14 @@ export function createComputerUseHost(input: {
         binarySha256?: string;
         distributionReady?: boolean;
       };
+      veraCuWindows?: {
+        binarySha256?: string;
+        distributionReady?: boolean;
+      };
     };
-    const expectedBinarySha256 = manifest.veraCu?.binarySha256;
-    if (input.isPackaged && manifest.veraCu?.distributionReady !== true) {
+    const entry = manifest[bundled.manifestKey];
+    const expectedBinarySha256 = entry?.binarySha256;
+    if (input.isPackaged && entry?.distributionReady !== true) {
       return { selected: selectComputerUseBackend() };
     }
     if (!expectedBinarySha256 || !/^[a-f0-9]{64}$/.test(expectedBinarySha256)) {
@@ -115,6 +126,14 @@ export function createComputerUseHost(input: {
       selected: selectComputerUseBackend({
         binaryPath,
         expectedBinarySha256,
+        // Windows input is all synthesized (SendInput has no pid-scoped
+        // variant and its only pointer path moves the system cursor), so the
+        // handshake must declare both policies or every dispatch refuses.
+        // macOS ships without this — its production path never synthesized
+        // input — and the physical-input guard stays in force on both.
+        ...(process.platform === 'win32'
+          ? { allowCompatibilityInputDispatch: true, allowGlobalPointer: true }
+          : {}),
         ...(input.compressFrame ? { compressFrame: input.compressFrame } : {}),
         physicalInputRecentlyActive: input.physicalInputRecentlyActive,
         ...(input.screenLocked ? { screenLocked: input.screenLocked } : {}),

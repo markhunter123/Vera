@@ -12,5 +12,17 @@
     "hardenedRuntime": false,
     "notarization": "missing",
     "distributionReady": false
+  },
+  "veraCuWindows": {
+    "repo": "markhunter123/Vera",
+    "path": "native/vera-cu-windows",
+    "commit": "17844c3c4a50e42c5ac41c0f3b74c7679d74131c",
+    "expectedProtocolVersion": "vera.cu/2",
+    "binaryName": "vera-cu-windows.exe",
+    "binarySizeBytes": 543744,
+    "binarySha256": "292aa1991e885eb610fc20cf7ee9465c86ca196994338be2ff607944e6455ff4",
+    "buildProvenance": "local-source-build",
+    "signature": "none",
+    "distributionReady": false
   }
 }

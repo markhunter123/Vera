@@ -93,6 +93,7 @@ function handle(msg) {
   }
   if (typeof msg.id !== 'number') return;
   if (msg.method === 'host.hello') {
+    logRec({ kind: 'hello', allowGlobalPointer: !!(msg.params && msg.params.allowGlobalPointer) });
     send({ jsonrpc: '2.0', id: msg.id, result: { ok: true, protocol: 'vera.cu/2',
       executor: { name: 'vera-cu-mock', version: '0.0.1' }, pid: process.pid,
       capabilities: { captureStream: false, elementActions: [], pointActions: [],
@@ -191,6 +192,8 @@ function makeService(
     answerCancel?: boolean;
     responsePad?: number;
     binaryPath?: string;
+    interpreterPath?: string;
+    allowGlobalPointer?: boolean;
     timeoutMs?: number;
     maxRestartAttempts?: number;
   } = {},
@@ -199,6 +202,13 @@ function makeService(
   const imageDir = join(workDir, `images-${randomUUID()}`);
   const options: VeraCuServiceOptions = {
     binaryPath: opts.binaryPath ?? mockPath,
+    // The mock is a .cjs file: posix spawns it through the shebang, Windows
+    // has no shebang support in CreateProcess and must go through the Node
+    // interpreter (spawn EFTYPE otherwise).
+    ...(process.platform === 'win32'
+      ? { interpreterPath: opts.interpreterPath ?? process.execPath }
+      : {}),
+    ...(opts.allowGlobalPointer === undefined ? {} : { allowGlobalPointer: opts.allowGlobalPointer }),
     imageDir,
     hostVersion: 'test',
     handshakeTimeoutMs: 5000,
@@ -477,7 +487,15 @@ describe('vera-cu supervisor: saying what actually failed', () => {
     const badPath = join(workDir, `bad-interp-${randomUUID()}`);
     await writeFile(badPath, '#!/nonexistent/interpreter\n', 'utf8');
     chmodSync(badPath, 0o755);
-    const { service } = makeService({ binaryPath: badPath, maxRestartAttempts: 1 });
+    // Windows never reads the shebang: there the equivalent exec failure is a
+    // spawn whose explicit interpreter does not exist, same ENOENT, same arm.
+    const { service } = makeService({
+      binaryPath: badPath,
+      maxRestartAttempts: 1,
+      ...(process.platform === 'win32'
+        ? { interpreterPath: join(workDir, `no-such-interpreter-${randomUUID()}.exe`) }
+        : {}),
+    });
     await assert.rejects(
       () => service.ensureStarted(),
       (error: unknown) => {
@@ -527,6 +545,26 @@ describe('vera-cu supervisor: saying what actually failed', () => {
         return true;
       },
     );
+  });
+});
+
+describe('vera-cu supervisor: handshake policy', () => {
+  it('sends allowGlobalPointer: false unless the option says otherwise', async () => {
+    const { service, logPath } = makeService();
+    await service.ensureStarted();
+    await waitForRecord(logPath, (record) => record.kind === 'hello', 'the mock never logged the hello');
+    const hello = (await readRecords(logPath)).find((record) => record.kind === 'hello');
+    // §6.3: the closed default. A host that never decided must not open the
+    // pointer path by omission.
+    assert.equal(hello?.allowGlobalPointer, false);
+  });
+
+  it('carries an explicit allowGlobalPointer into the hello params', async () => {
+    const { service, logPath } = makeService({ allowGlobalPointer: true });
+    await service.ensureStarted();
+    await waitForRecord(logPath, (record) => record.kind === 'hello', 'the mock never logged the hello');
+    const hello = (await readRecords(logPath)).find((record) => record.kind === 'hello');
+    assert.equal(hello?.allowGlobalPointer, true);
   });
 });
 
