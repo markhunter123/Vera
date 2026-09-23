@@ -147,6 +147,7 @@ import { createCapabilityRevisionPublisher } from "./runtime-host-capability-rev
 import { buildClientSettingsTools } from "./client-settings-tools.js";
 import { createClientSettingsEffects } from "./client-settings-effects.js";
 import { registerClientSettingsIpc } from "./client-settings-ipc-main.js";
+import { registerSpeechIpc } from "./speech-ipc-main.js";
 import { startClientSettingsWatcher } from "./client-settings-watcher.js";
 import { registerRuntimeHostGitHubCopilotIpc } from "./runtime-host-github-copilot-ipc-main.js";
 import { registerRuntimeHostArtifactsIpc } from "./runtime-host-artifacts-ipc-main.js";
@@ -321,12 +322,13 @@ const desktopLocale = createDesktopLocaleAuthority({
 });
 const mcpConfigStore = createMcpConfigStore(workspaceRoot);
 const workBoardStore = createWorkBoardStore(workspaceRoot);
+// Shared across MCP OAuth storage and speech IPC: one credentials.json
+// behind one cross-process lockfile.
+const credentialStore = createFileCredentialStore(workspaceRoot);
 const mcpManager = new McpClientManager({
   clientName: "vera-desktop",
   clientVersion: app.getVersion(),
-  oauthStorage: createCredentialMcpOAuthStorage(
-    createFileCredentialStore(workspaceRoot),
-  ),
+  oauthStorage: createCredentialMcpOAuthStorage(credentialStore),
 });
 // One lane shared by config transactions and login claims: "no login is
 // active" checked inside a transaction cannot be invalidated by a claim
@@ -1404,6 +1406,7 @@ function registerPersistentClientIpc(): void {
       await clientSettingsEffects.apply(settings, true);
     },
   });
+  registerSpeechIpc({ ipcMain, credentialStore });
   settingsBotsIpc = registerSettingsBotsIpc({
     ipcMain,
     settingsStore,

@@ -45,23 +45,38 @@ export interface MainWindowPermissionRequest {
  * shared by auxiliary windows. Clipboard write is granted only when
  * `navigator.clipboard.writeText` asks for it (Chromium reports the sanitized
  * text path as `clipboard-sanitized-write`; the unsanitized name is accepted
- * too so the exact version never regresses copy). Media capture is not granted.
+ * too so the exact version never regresses copy). Media capture is granted
+ * only for audio — the voice-input button records microphone audio for
+ * speech-to-text — and camera/display stay denied.
  */
-function isAllowedPermission(permission: string): boolean {
-  return (
+function isAllowedPermission(
+  permission: string,
+  mediaType?: string,
+  mediaTypes?: readonly string[],
+): boolean {
+  if (
     permission === 'clipboard-sanitized-write'
     || permission === 'clipboard-write'
-  );
+  ) {
+    return true;
+  }
+  if (permission === 'media') {
+    return mediaType === 'audio'
+      || (mediaTypes !== undefined
+        && mediaTypes.length > 0
+        && mediaTypes.every((type) => type === 'audio'));
+  }
+  return false;
 }
 
 export function allowsMainWindowPermissionCheck(input: MainWindowPermissionCheck): boolean {
   if (!(input.ownerMatches && input.rendererUrlMatches && input.isMainFrame)) return false;
-  return isAllowedPermission(input.permission);
+  return isAllowedPermission(input.permission, input.mediaType);
 }
 
 export function allowsMainWindowPermissionRequest(input: MainWindowPermissionRequest): boolean {
   if (!(input.ownerMatches && input.rendererUrlMatches && input.isMainFrame)) return false;
-  return isAllowedPermission(input.permission);
+  return isAllowedPermission(input.permission, undefined, input.mediaTypes);
 }
 
 /**

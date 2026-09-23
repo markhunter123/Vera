@@ -71,6 +71,12 @@ import type {
   AppIconSelectResult,
 } from './bridge-contract.js';
 import type { ExternalSessionImportIpcResult } from './external-session-import-result.js';
+import type {
+  SpeechSttConfigStatus,
+  SpeechSttConfigureInput,
+  SpeechSttConfigureResult,
+  SpeechSttTranscribeResult,
+} from '../shared/speech-contract.js';
 import {
   projectDesktopExternalSessionCatalogItem,
   type DesktopExternalSessionCatalogItem,
@@ -2810,6 +2816,22 @@ const veraBridge = {
           return ipcRenderer.invoke('settings:bots:onboarding:open', sessionId);
         },
       },
+    },
+  },
+  speech: {
+    // Voice input (Tencent Cloud ASR). Secrets live in the main-process
+    // credential store; the renderer only ever sees a masked SecretId.
+    configStatus(): Promise<SpeechSttConfigStatus> {
+      return ipcRenderer.invoke('speech:configStatus');
+    },
+    configure(input: SpeechSttConfigureInput): Promise<SpeechSttConfigureResult> {
+      return ipcRenderer.invoke('speech:configure', input);
+    },
+    clearConfig(): Promise<void> {
+      return ipcRenderer.invoke('speech:clearConfig');
+    },
+    transcribe(audio: Uint8Array): Promise<SpeechSttTranscribeResult> {
+      return ipcRenderer.invoke('speech:transcribe', { audio });
     },
   },
   notifications: {

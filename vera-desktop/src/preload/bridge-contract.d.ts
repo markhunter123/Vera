@@ -101,6 +101,12 @@ import type {
   DesktopTranscriptBatch,
   DesktopTranscriptHandle,
 } from './transcript-contract.js';
+import type {
+  SpeechSttConfigStatus,
+  SpeechSttConfigureInput,
+  SpeechSttConfigureResult,
+  SpeechSttTranscribeResult,
+} from '../shared/speech-contract.js';
 import type { PetPackManifestV1 } from '@vera/core/pet';
 import type { WorkBoardItem, WorkBoardListQuery, WorkBoardPage } from '@vera/core/work-board';
 import type { WorkBoardMutationOptions } from '@vera/storage/work-board-store';
@@ -1249,6 +1255,12 @@ export interface VeraBridge {
         openInBrowser(sessionId: string): Promise<Result<void>>;
       };
     };
+  };
+  speech: {
+    configStatus(): Promise<SpeechSttConfigStatus>;
+    configure(input: SpeechSttConfigureInput): Promise<SpeechSttConfigureResult>;
+    clearConfig(): Promise<void>;
+    transcribe(audio: Uint8Array): Promise<SpeechSttTranscribeResult>;
   };
   notifications: {
     /** Fire-and-forget: report that an agent turn reached a terminal

@@ -38,6 +38,7 @@ import {
   ArrowUp,
   FileText,
   ListTodo,
+  Mic,
   Network,
   Pencil,
   Plus,
@@ -247,6 +248,20 @@ export const Composer = forwardRef<
     continuing?: boolean;
     /** True while the current streaming session is processing a stop request. */
     stopPending?: boolean;
+    /**
+     * Voice input (语音输入): host-owned recorder + recognition. When
+     * present, a microphone button renders in the sendActions slot
+     * (left of the send button); absent, the composer renders without
+     * it — hosts without voice support keep today's layout. The host
+     * owns recording, the recognition call, and error reporting; the
+     * composer only mirrors the state on the button.
+     */
+    voiceInput?: {
+      /** `recording` captures audio; `transcribing` waits on the result. */
+      state: 'idle' | 'recording' | 'transcribing';
+      /** Click behavior: start recording, stop + recognize, or no-op. */
+      onToggle(): void;
+    };
     queuedMessages?: readonly MessageQueueEntryProjection[];
     queuedMessageRevision?: number;
     /** Promote a queued follow-up into the active Turn (调整方向). */
@@ -1334,6 +1349,18 @@ export const Composer = forwardRef<
   // that window: Esc interrupts from the input, which is where the hands already
   // are.
   const stopShown = props.streaming === true && !text.trim();
+  // Visual tier of the send slot, mirrored to CSS via `data-state` (the
+  // owner stylesheet styles each tier; see composer.css). The state
+  // machine above is untouched — this is presentation only:
+  //   empty            not streaming, no draft   → dimmed (40%) send
+  //   idle             not streaming, draft ready → primary send
+  //   streaming-empty  streaming, nothing to say  → destructive stop
+  //   streaming-draft  streaming, queued follow-up → warning send
+  const sendVisualState = stopShown
+    ? 'streaming-empty'
+    : props.streaming === true
+      ? 'streaming-draft'
+      : !text.trim() ? 'empty' : 'idle';
   // The pending plate renders the follow-up queue only: steering entries are
   // already handed to the active Turn and leave the plate at that moment.
   const queueCount = props.queuedMessages?.length ?? 0;
@@ -2044,10 +2071,42 @@ export const Composer = forwardRef<
               ))}
             </div>
           )}
+          sendActions={props.voiceInput ? (
+            // Voice input lives in the sendActions slot — beside the send
+            // button, never inside it. The sendButton slot stays a single
+            // control (composer-send-toggle.test.tsx contract); the mic is
+            // a peer, styled by the owner stylesheet (composer.css).
+            <IconButton
+              variant="ghost"
+              type="button"
+              size="md"
+              className="vera-composer-voice"
+              data-voice-state={props.voiceInput.state}
+              aria-busy={props.voiceInput.state === 'transcribing' ? 'true' : undefined}
+              label={
+                props.voiceInput.state === 'recording'
+                  ? copy.voiceStopLabel
+                  : props.voiceInput.state === 'transcribing'
+                    ? copy.voiceTranscribingLabel
+                    : copy.voiceInputLabel
+              }
+              tooltip={
+                props.voiceInput.state === 'recording'
+                  ? copy.voiceStopLabel
+                  : props.voiceInput.state === 'transcribing'
+                    ? copy.voiceTranscribingLabel
+                    : copy.voiceInputLabel
+              }
+              onClick={props.voiceInput.onToggle}
+              icon={<Mic size={ICON_SIZE.control} aria-hidden="true" />}
+            />
+          ) : undefined}
           sendButton={stopShown ? (
             <IconButton
               variant="secondary"
               type="button"
+              className="vera-composer-send"
+              data-state={sendVisualState}
               isDisabled={props.stopPending}
               label={props.stopPending ? copy.stopping : copy.stopLabel}
               aria-busy={props.stopPending ? 'true' : undefined}
@@ -2060,14 +2119,28 @@ export const Composer = forwardRef<
               icon={<Square size={ICON_SIZE.control} aria-hidden="true" />}
             />
           ) : (
-            // GLOBAL ANCHOR — DO NOT RESTYLE. This Send/Stop slot (its size,
-            // shape, glyph, and placement) is the one control the whole app
-            // navigates by; it has regressed multiple times from well-meaning
-            // "improvements". Queue affordances live in the pending plate
-            // above the card, never in this button.
+            // GLOBAL ANCHOR — Send/Stop slot spec (owner-approved 2026-09,
+            // restyle after repeated regressions; the queue affordance still
+            // lives in the pending plate above the card, never in this
+            // button):
+            // 1. ONE control per state — the slot is either Send or Stop,
+            //    never both, never a second control beside it (the voice
+            //    button is a peer in `sendActions`).
+            // 2. Circular shape (border-radius full) — the one circular
+            //    control on the footer; size stays Astryx md so the
+            //    session-workbar bounding-box contract holds.
+            // 3. Four visual tiers via `data-state`, styled by the owner
+            //    stylesheet (composer.css): `empty` (no draft, 40% send),
+            //    `idle` (accent send), `streaming-empty` (destructive
+            //    stop), `streaming-draft` (warning send, queued follow-up).
+            // 4. The state machine above is the only gate — restyles may
+            //    not add or remove states, or touch aria-labels 发送/停止
+            //    (the E2E selectors navigate by role + name).
             <IconButton
               variant="primary"
               type="submit"
+              className="vera-composer-send"
+              data-state={sendVisualState}
               isDisabled={sendDisabled}
               label={copy.sendLabel}
               aria-busy={sendPending ? 'true' : undefined}

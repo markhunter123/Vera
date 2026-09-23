@@ -45,16 +45,68 @@ describe('main window Chromium permission policy', () => {
     }
   });
 
-  it('denies media, subframes, auxiliary windows, and unrelated permissions', () => {
+  it('grants audio-only media capture and denies video or mixed capture', () => {
     assert.equal(allowsMainWindowPermissionCheck({
       ownerMatches: true,
       rendererUrlMatches: true,
       permission: 'media',
       isMainFrame: true,
       mediaType: 'audio',
+    }), true);
+    assert.equal(allowsMainWindowPermissionCheck({
+      ownerMatches: true,
+      rendererUrlMatches: true,
+      permission: 'media',
+      isMainFrame: true,
+      mediaType: 'video',
     }), false);
     assert.equal(allowsMainWindowPermissionRequest({
       ownerMatches: true,
+      rendererUrlMatches: true,
+      permission: 'media',
+      isMainFrame: true,
+      mediaTypes: ['audio'],
+    }), true);
+    assert.equal(allowsMainWindowPermissionRequest({
+      ownerMatches: true,
+      rendererUrlMatches: true,
+      permission: 'media',
+      isMainFrame: true,
+      mediaTypes: ['audio', 'video'],
+    }), false);
+    assert.equal(allowsMainWindowPermissionRequest({
+      ownerMatches: true,
+      rendererUrlMatches: true,
+      permission: 'media',
+      isMainFrame: true,
+      mediaTypes: ['video'],
+    }), false);
+  });
+
+  it('denies media, subframes, auxiliary windows, and unrelated permissions', () => {
+    assert.equal(allowsMainWindowPermissionCheck({
+      ownerMatches: true,
+      rendererUrlMatches: true,
+      permission: 'media',
+      isMainFrame: false,
+      mediaType: 'audio',
+    }), false);
+    assert.equal(allowsMainWindowPermissionCheck({
+      ownerMatches: true,
+      rendererUrlMatches: false,
+      permission: 'media',
+      isMainFrame: true,
+      mediaType: 'audio',
+    }), false);
+    assert.equal(allowsMainWindowPermissionRequest({
+      ownerMatches: true,
+      rendererUrlMatches: true,
+      permission: 'media',
+      isMainFrame: false,
+      mediaTypes: ['audio'],
+    }), false);
+    assert.equal(allowsMainWindowPermissionRequest({
+      ownerMatches: false,
       rendererUrlMatches: true,
       permission: 'media',
       isMainFrame: true,
@@ -65,7 +117,7 @@ describe('main window Chromium permission policy', () => {
       rendererUrlMatches: true,
       permission: 'media',
       isMainFrame: true,
-      mediaTypes: ['audio', 'video'],
+      mediaTypes: [],
     }), false);
     assert.equal(allowsMainWindowPermissionRequest({
       ownerMatches: true,
@@ -198,6 +250,16 @@ describe('main window Chromium permission policy', () => {
       isMainFrame: true,
       mediaType: 'audio',
       requestingUrl: 'file:///Applications/Vera.app/index.html',
+    }), true);
+    assert.equal(checkHandler(owner, 'media', 'file://', {
+      isMainFrame: true,
+      mediaType: 'video',
+      requestingUrl: 'file:///Applications/Vera.app/index.html',
+    }), false);
+    assert.equal(checkHandler(other, 'media', 'file://', {
+      isMainFrame: true,
+      mediaType: 'audio',
+      requestingUrl: 'file:///Applications/Vera.app/index.html',
     }), false);
     assert.equal(checkHandler(other, 'clipboard-sanitized-write', 'file://', {
       isMainFrame: true,
@@ -216,7 +278,17 @@ describe('main window Chromium permission policy', () => {
       mediaTypes: ['audio'],
       requestingUrl: 'file:///Applications/Vera.app/index.html',
     });
-    assert.equal(granted, false);
+    assert.equal(granted, true);
+
+    let videoGranted: boolean | undefined;
+    requestHandler(owner, 'media', (next) => {
+      videoGranted = next;
+    }, {
+      isMainFrame: true,
+      mediaTypes: ['video'],
+      requestingUrl: 'file:///Applications/Vera.app/index.html',
+    });
+    assert.equal(videoGranted, false);
 
     let clipboardGranted: boolean | undefined;
     requestHandler(owner, 'clipboard-sanitized-write', (next) => {

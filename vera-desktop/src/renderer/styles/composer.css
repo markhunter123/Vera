@@ -596,3 +596,82 @@
   justify-content: space-between;
   gap: var(--space-3);
 }
+
+/* =============================================================================
+   SEND SLOT — the owner-approved restyle (2026-09, invt-visual).
+
+   The component (vera-ui composer.tsx) mirrors its existing state machine to
+   `data-state`; these rules own every pixel of it. Per the GLOBAL ANCHOR spec:
+   one control per state, circular shape, four tiers, aria-labels untouched.
+   Size stays Astryx md (the session-workbar bounding-box contract depends on
+   the geometry, not the paint).
+============================================================================= */
+
+/* The one circular control on the footer. */
+.vera-composer-send {
+  border-radius: var(--radius-full);
+}
+
+/* Tier 1 — no draft: 40% per the approved spec (deliberately dimmer than
+   --opacity-disabled so "there is nothing to send" reads at a glance). */
+.vera-composer-send[data-state='empty'] {
+  opacity: 0.4;
+}
+
+/* Tier 3 — streaming + no draft: destructive stop. Ink is Astryx's
+   `--color-on-accent` pair (white in light, near-black in dark): the correct
+   light-dark ink for any saturated Vera tier, and Vera's --destructive
+   lightens in dark mode exactly like --accent-solid does. */
+.vera-composer-send[data-state='streaming-empty'] {
+  background: var(--destructive);
+  color: var(--color-on-accent);
+}
+
+.vera-composer-send[data-state='streaming-empty']:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--destructive) 88%, black);
+}
+
+/* Tier 4 — streaming with a draft: warning send. The draft is a queued
+   follow-up, not a new turn, so the button signals "wait to hand over" in
+   amber while staying enabled. */
+.vera-composer-send[data-state='streaming-draft'] {
+  background: var(--warning);
+  color: var(--color-on-accent);
+}
+
+.vera-composer-send[data-state='streaming-draft']:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--warning) 88%, black);
+}
+
+/* =============================================================================
+   VOICE INPUT — the mic peer in the sendActions slot (never inside sendButton).
+============================================================================= */
+
+/* Recording: solid destructive, echoing the streaming-stop tier; the pulse is
+   amplitude-shaped (1 → 1.06) so it reads as capture, not as an error. */
+.vera-composer-voice[data-voice-state='recording'] {
+  background: var(--destructive);
+  color: var(--color-on-accent);
+  animation: vera-voice-recording-pulse 1.6s var(--ease-out-strong) infinite;
+}
+
+.vera-composer-voice[data-voice-state='recording']:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--destructive) 88%, black);
+}
+
+@keyframes vera-voice-recording-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* Transcribing: quiet waiting state — a wash, not a solid; aria-busy carries
+   the semantics for assistive tech. */
+.vera-composer-voice[data-voice-state='transcribing'] {
+  background: var(--accent-wash);
+  color: var(--foreground-secondary);
+}
+
+.vera-composer-voice[data-voice-state='transcribing']:hover:not(:disabled) {
+  background: var(--accent-wash);
+}
+

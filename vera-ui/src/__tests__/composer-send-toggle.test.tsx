@@ -43,6 +43,19 @@ function renderComposer(streaming: boolean): string {
   );
 }
 
+function renderComposerWithVoice(voiceState: 'idle' | 'recording' | 'transcribing'): string {
+  return renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <Composer
+        streaming={false}
+        onSend={() => undefined}
+        onStop={() => undefined}
+        voiceInput={{ state: voiceState, onToggle: () => undefined }}
+      />
+    </LocaleProvider>,
+  );
+}
+
 function sendSlotControls(markup: string): string[] {
   return markup.match(/aria-label="(?:Send|Stop)"/g) ?? [];
 }
@@ -62,6 +75,30 @@ test('a running composer keeps Send alone — no mode switch in the send slot', 
   assert.deepEqual(sendSlotControls(markup), ['aria-label="Stop"']);
   assert.doesNotMatch(markup, /Follow-up behavior/);
   assert.doesNotMatch(markup, /SegmentedControl/);
+});
+
+test('the send control mirrors its visual tier to data-state', () => {
+  // Empty draft → the dimmed `empty` tier; streaming + empty draft → the
+  // destructive stop tier. The state machine is unchanged — this asserts the
+  // presentation mirror the owner stylesheet (composer.css) styles.
+  assert.match(renderComposer(false), /data-state="empty"/);
+  assert.match(renderComposer(true), /data-state="streaming-empty"/);
+});
+
+test('voice input renders as a peer of the send slot, never inside it', () => {
+  const markup = renderComposerWithVoice('idle');
+  // The single-control contract holds with the mic beside the button.
+  assert.deepEqual(sendSlotControls(markup), ['aria-label="Send"']);
+  assert.match(markup, /aria-label="Voice input"/);
+  assert.match(markup, /class="[^"]*vera-composer-voice/);
+  // Recording swaps the accessible name; "Stop recording" must NOT match the
+  // send/stop regex above (it requires the quote right after `Stop`).
+  const recording = renderComposerWithVoice('recording');
+  assert.deepEqual(sendSlotControls(recording), ['aria-label="Send"']);
+  assert.match(recording, /aria-label="Stop recording"/);
+  // Without the prop the composer renders without the mic (CLI / hosts
+  // without voice support keep today's layout).
+  assert.doesNotMatch(renderComposer(false), /Voice input/);
 });
 
 test('keeps Host order visible until the reordered projection arrives', async () => {

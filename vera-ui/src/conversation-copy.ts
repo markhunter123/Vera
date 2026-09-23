@@ -186,6 +186,10 @@ export interface ConversationCopy {
     noModelAction: string;
     /** Explanatory title on the disabled Send button in the no-model state. */
     noModelSendTitle: string;
+    /** Mic button (voice input) labels, one per voice state. */
+    voiceInputLabel: string;
+    voiceStopLabel: string;
+    voiceTranscribingLabel: string;
   };
   model: {
     thinkingLevel: string;
@@ -447,6 +451,7 @@ const CONVERSATION_COPY = {
       queuedMessagesAriaLabel: (count) => `${count} 条待发送消息`,
       promoteQueuedEntry: '调整方向', editQueuedEntry: '编辑', saveQueuedEntry: '保存', cancelQueuedEntryEdit: '取消编辑', deleteQueuedEntry: '删除', reorderQueuedEntry: '拖动排序',
       stopLabel: '停止', stopping: '停止中…',
+      voiceInputLabel: '语音输入', voiceStopLabel: '停止录音', voiceTranscribingLabel: '识别中…',
       streaming: 'Vera 正在回答…', processing: 'Vera 正在处理…', continuing: 'Vera 继续中…',
       interruptHint: '或点停止中断', addContext: '添加上下文', stagedContext: '附加内容',
       selectModel: '选择模型', dropToImport: '松开以导入文件内容', addingAttachment: '正在添加附件', addFileOrDirectory: '添加文件或目录',
@@ -598,6 +603,7 @@ const CONVERSATION_COPY = {
       queuedMessagesAriaLabel: (count) => `${count} queued message${count === 1 ? '' : 's'}`,
       promoteQueuedEntry: 'Steer', editQueuedEntry: 'Edit', saveQueuedEntry: 'Save', cancelQueuedEntryEdit: 'Cancel editing', deleteQueuedEntry: 'Delete', reorderQueuedEntry: 'Drag to reorder',
       stopLabel: 'Stop', stopping: 'Stopping…',
+      voiceInputLabel: 'Voice input', voiceStopLabel: 'Stop recording', voiceTranscribingLabel: 'Transcribing…',
       streaming: 'Vera is responding…', processing: 'Vera is working…', continuing: 'Vera is continuing…',
       interruptHint: 'or click Stop to interrupt', addContext: 'Add context', stagedContext: 'staged items',
       selectModel: 'Choose model', dropToImport: 'Drop to import file contents', addingAttachment: 'Adding attachment', addFileOrDirectory: 'Add file or directory',

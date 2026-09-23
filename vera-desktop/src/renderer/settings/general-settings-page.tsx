@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PersonalizationSettingsSection } from "./personalization-settings-section";
+import { VoiceInputSettingsSection } from "./voice-input-settings-section";
 import {
   SettingsActions,
   SettingsField,
@@ -283,6 +284,12 @@ export function GeneralSettingsPage(props: {
           }
         />
       </SettingsSection>
+      {/* 语音识别: client-owned toggle + Tencent Cloud ASR keys (stored in the
+          desktop credential store, not settings.json). */}
+      <VoiceInputSettingsSection
+        enabled={props.settings.voiceInput.enabled}
+        onUpdate={props.onUpdate}
+      />
       {showRuntimeHostDefaults ? (
         <GeneralDefaultsCard
           connections={props.connections}

@@ -83,6 +83,8 @@ import { LiveTurnReconciler } from './live-turn-reconciler';
 import { useAppShellSessionUiReads } from './use-app-shell-session-ui-reads';
 import { AgentGraphPanel } from './agent-graph-panel';
 import { ChatComposerRegion } from './chat-composer-region';
+import { useVoiceInput } from './voice/use-voice-input';
+import { getVoiceInputCopy } from './voice/voice-copy';
 import {
   WorkbarHost,
   WorkbarTitlebarActions,
@@ -760,6 +762,53 @@ function AppShellContent({
   const [helpOpen, closeHelp, openHelp] = useKeyboardHelp();
   const [paletteOpen, openPalette, closePalette] = useCommandPalette();
   const composerRef = useRef<ComposerHandle>(null);
+  // Voice input opt-in (Settings · 通用): same client-settings read pattern
+  // as the WorkHub toggle — one getClient() on mount, refreshed on
+  // subscribeClientChanged, last known value kept on a transient failure.
+  const [voiceInputEnabled, setVoiceInputEnabled] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const enabled = (await window.vera.settings.getClient()).voiceInput.enabled;
+        if (!disposed) setVoiceInputEnabled(enabled);
+      } catch {
+        // Keep the last known client-owned setting.
+      }
+    };
+    void refresh();
+    const unsubscribe = window.vera.settings.subscribeClientChanged(() => void refresh());
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
+  const voiceInputCopy = getVoiceInputCopy(uiLocale);
+  const voiceInput = useVoiceInput({
+    enabled: voiceInputEnabled,
+    onText: (text) => {
+      composerRef.current?.appendText(text);
+      composerRef.current?.focus();
+    },
+    onError: (error) => {
+      toastApi.toast({
+        variant: 'warning',
+        title: error.reason === 'not_configured'
+          ? voiceInputCopy.notConfiguredTitle
+          : voiceInputCopy.transcribeFailedTitle,
+        description: voiceInputCopy.errorText(error),
+        duration: 10_000,
+        ...(error.reason === 'not_configured'
+          ? {
+              action: {
+                label: voiceInputCopy.openSettingsLabel,
+                onClick: () => openSettingsSection('general'),
+              },
+            }
+          : {}),
+      });
+    },
+  });
   const retractedWorkspaceReferencesRef = useRef<Record<string, InlineReference[]>>({});
   const [revisionDraft, setRevisionDraft] = useState<TurnRevisionDraft | null>(null);
   const revisionDraftRef = useRef<TurnRevisionDraft | null>(null);
@@ -2888,6 +2937,9 @@ function AppShellContent({
                   continuing={showContinuingIndicator && !activeStreamingLive}
                   onSend={sendOwningItsTarget}
                   onStop={stop}
+                  voiceInput={voiceInputEnabled
+                    ? { state: voiceInput.state, onToggle: voiceInput.toggle }
+                    : undefined}
                   queuedMessages={activeMessageQueue?.entries}
                   queuedMessageRevision={activeMessageQueue?.queueRevision}
                   onPromoteQueuedEntry={activeId ? promoteQueuedEntry : undefined}

@@ -506,6 +506,15 @@ export interface WorkHubSettings {
 }
 
 /**
+ * Client-owned opt-in for voice input (点按录音 → 识别 → 填入输入框).
+ * `enabled` gates the composer's microphone button; the Tencent Cloud
+ * credentials live in the desktop credential store, never in settings.
+ */
+export interface VoiceInputSettings {
+  enabled: boolean;
+}
+
+/**
  * System-level power behavior (Settings surface: the 定时任务 page's
  * capability row). Scheduled tasks are driven by an in-process timer; when
  * the machine sleeps, that timer is frozen and reminders silently never
@@ -547,6 +556,7 @@ export interface AppSettings {
   projects: ProjectPreferencesSettings;
   notifications: NotificationSettings;
   workHub: WorkHubSettings;
+  voiceInput: VoiceInputSettings;
   system: SystemSettings;
   shell: ShellSettings;
   subagents: SubagentSettings;
@@ -666,6 +676,7 @@ export type UpdateAppSettingsInput = Partial<{
   projects: Partial<ProjectPreferencesSettings>;
   notifications: Partial<NotificationSettings>;
   workHub: Partial<WorkHubSettings>;
+  voiceInput: Partial<VoiceInputSettings>;
   system: Partial<SystemSettings>;
   shell: Partial<ShellSettings>;
   webSearch: WebSearchSettingsPatch;
@@ -749,6 +760,10 @@ export function createDefaultSettings(): AppSettings {
     workHub: {
       enabled: false,
     },
+    voiceInput: {
+      // Off by default: recording audio is an explicit opt-in.
+      enabled: false,
+    },
     system: {
       // Off by default: holding a power-save blocker is an explicit,
       // battery-affecting opt-in, not a silent default.
@@ -829,6 +844,10 @@ export function mergeSettings(current: AppSettings, patch: UpdateAppSettingsInpu
       ...current.workHub,
       ...(patch.workHub ?? {}),
     },
+    voiceInput: {
+      ...current.voiceInput,
+      ...(patch.voiceInput ?? {}),
+    },
     system: {
       ...current.system,
       ...(patch.system ?? {}),
@@ -863,6 +882,7 @@ export function normalizeSettings(input: unknown): AppSettings {
     projects: value.projects,
     notifications: value.notifications,
     workHub: value.workHub,
+    voiceInput: value.voiceInput,
     system: value.system,
     shell: value.shell,
     subagents: value.subagents,
@@ -958,6 +978,12 @@ export function normalizeSettings(input: unknown): AppSettings {
     },
     workHub: {
       enabled: typeof base.workHub.enabled === 'boolean' ? base.workHub.enabled : false,
+    },
+    // Fail-closed boolean coercion, same reasoning as
+    // `notifications.runComplete`: a non-boolean `enabled` must not gate
+    // the microphone button as a truthy/falsy non-boolean.
+    voiceInput: {
+      enabled: typeof base.voiceInput.enabled === 'boolean' ? base.voiceInput.enabled : false,
     },
     // Fail-closed boolean coercion, same reasoning as
     // `notifications.runComplete`: a non-boolean `keepSystemAwake` (from a

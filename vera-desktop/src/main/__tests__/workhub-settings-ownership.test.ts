@@ -37,3 +37,15 @@ test('keeps the WorkHub opt-in client-global across Runtime Hosts', () => {
   const runtimeHost = createDefaultSettings();
   assert.equal(projectClientOwnedSettings(runtimeHost, client).workHub.enabled, true);
 });
+
+test('keeps the voice-input opt-in client-global across Runtime Hosts', () => {
+  assert.deepEqual(clientOwnedSettingsPatch({ voiceInput: { enabled: true } }), {
+    voiceInput: { enabled: true },
+  });
+  assert.equal(hasRuntimeHostSettingsPatch({ voiceInput: { enabled: true } }), false);
+
+  const client = createDefaultSettings();
+  client.voiceInput.enabled = true;
+  const runtimeHost = createDefaultSettings();
+  assert.equal(projectClientOwnedSettings(runtimeHost, client).voiceInput.enabled, true);
+});
