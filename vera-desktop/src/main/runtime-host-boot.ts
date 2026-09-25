@@ -590,6 +590,17 @@ const currentDesktopWorkspaceTarget = async (
   }
   return workspace;
 };
+/** A Bot Session runs in the Project the Bot settings name; with none named it
+ *  follows the desktop's current selection, as it did before that setting
+ *  existed. The Host validates the Project identity either way. */
+const botWorkspaceTarget = async (
+  target: DesktopRuntimeHostTargetPolicy,
+): Promise<WorkspaceTarget> => {
+  const configured = (await settingsStore.get()).botChat.workspaceProjectId;
+  if (configured) return { kind: 'project', projectId: configured };
+  return currentDesktopWorkspaceTarget(target);
+};
+
 const mcpCapabilityPublisher = createCapabilityRevisionPublisher(() =>
   mcpManager.toolSnapshot().revision,
 );
@@ -826,7 +837,7 @@ runtimeHostManager = await startRuntimeHostDesktopManager(
     },
     botRegistry,
     resolveBotCreateTarget: async (target) => ({
-      workspace: await currentDesktopWorkspaceTarget(target),
+      workspace: await botWorkspaceTarget(target),
     }),
     resolveSessionCreateProject: async (input, target) => {
       const currentTarget = requireRuntimePolicyTarget(target);

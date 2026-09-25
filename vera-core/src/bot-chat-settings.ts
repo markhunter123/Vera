@@ -74,10 +74,19 @@ export interface BotChannelSettings {
 
 export interface BotChatSettings {
   channels: Record<BotProvider, BotChannelSettings>;
+  /**
+   * Project the Bot Sessions run in. A Bot message arrives from outside the
+   * desktop, so its Session gets a Project of its own instead of whichever one
+   * the desktop happens to have selected. Unset keeps the previous behavior:
+   * the Host resolves the currently selected Project (or the host path behind
+   * it).
+   */
+  workspaceProjectId?: string;
 }
 
 export type BotChatSettingsPatch = Partial<{
   channels: Partial<Record<BotProvider, Partial<BotChannelSettings>>>;
+  workspaceProjectId: string;
 }>;
 
 export function isBotReadinessState(value: unknown): value is BotReadinessState {
@@ -133,12 +142,30 @@ export function createDefaultBotChatSettings(): BotChatSettings {
   };
 }
 
+const BOT_WORKSPACE_PROJECT_ID_MAX_LENGTH = 128;
+
+/** A usable Project id, or `undefined` for "not configured". The empty string
+ *  is how the settings UI clears the choice, so it must not persist. */
+export function normalizeBotWorkspaceProjectId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > BOT_WORKSPACE_PROJECT_ID_MAX_LENGTH) return undefined;
+  return trimmed;
+}
+
 export function mergeBotChatSettings(
   current: BotChatSettings,
   patch: BotChatSettingsPatch | undefined,
 ): BotChatSettings {
+  // The channels map merges per key; a top-level field has no such structure,
+  // so it needs an explicit arm — spreading `patch` would also carry keys the
+  // patch type never declared.
+  const workspaceProjectId = patch && 'workspaceProjectId' in patch
+    ? normalizeBotWorkspaceProjectId(patch.workspaceProjectId)
+    : current.workspaceProjectId;
   return {
     ...current,
+    ...(workspaceProjectId ? { workspaceProjectId } : { workspaceProjectId: undefined }),
     channels: {
       ...current.channels,
       ...Object.fromEntries(
@@ -168,7 +195,11 @@ export function normalizeBotChatSettings(
   settings: BotChatSettings,
   rawSettings: Partial<BotChatSettings> | undefined,
 ): BotChatSettings {
+  const workspaceProjectId = normalizeBotWorkspaceProjectId(settings.workspaceProjectId);
   return {
+    // Rebuilt from scratch like `channels` below: a field this function does
+    // not name is a field the persisted record does not keep.
+    ...(workspaceProjectId ? { workspaceProjectId } : {}),
     channels: Object.fromEntries(
       BOT_PROVIDERS.map((provider) => {
         const rawChannel = rawSettings?.channels?.[provider] as

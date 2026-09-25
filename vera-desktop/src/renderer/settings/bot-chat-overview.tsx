@@ -23,11 +23,11 @@ import type { BotChannelSettings, BotProvider } from '@vera/core/bot-chat-settin
 import type { BotStatus } from '@vera/runtime/bots';
 import { BOT_PROVIDERS } from '@vera/core/settings';
 import { EmptyState, Item, StatusDot } from '@astryxdesign/core';
-import { Button, RelativeTime, useUiLocale, Banner } from '@vera/ui';
+import { Button, RelativeTime, Selector, useUiLocale, Banner } from '@vera/ui';
 import { deriveBotChannelViewState } from './bot-settings-view-model';
 import { BOT_LABELS, BotBrandLogo, botReadinessCopyForSupport, botStatusDetail } from './bot-chat-shared';
 import { getBotSettingsCopy } from '../locales/settings-bot-copy';
-import { SettingsPage, SettingsSection } from './settings-section';
+import { SettingsPage, SettingsRow, SettingsSection } from './settings-section';
 import { dotForStatus } from '@vera/ui';
 
 /**
@@ -40,8 +40,11 @@ export function BotChatOverview(props: {
   channels: Record<BotProvider, BotChannelSettings>;
   statuses: Record<BotProvider, BotStatus> | null;
   statusLoadError: string | null;
+  workspaceProjectId: string | undefined;
+  projects: ReadonlyArray<{ readonly id: string; readonly name: string }>;
   onOpenChannel(provider: BotProvider): void;
   onRefreshStatuses(): Promise<boolean>;
+  onSelectWorkspaceProject(projectId: string | undefined): void;
 }) {
   const locale = useUiLocale();
   const botCopy = getBotSettingsCopy(locale);
@@ -91,6 +94,26 @@ export function BotChatOverview(props: {
           description={props.statusLoadError}
           endContent={<Button variant="secondary" onClick={() => void props.onRefreshStatuses()} label={copy.reload} />} />
       )}
+      <SettingsSection
+        titleId="remote-access-workspace-heading"
+        title={copy.workspaceTitle}
+        description={copy.workspaceHint}>
+        <SettingsRow
+          label={copy.workspaceLabel}
+          end={(
+            <Selector
+              value={props.workspaceProjectId ?? ''}
+              label={copy.workspaceLabel}
+              options={[
+                { value: '', label: copy.workspaceFollow },
+                ...props.projects.map((project) => ({ value: project.id, label: project.name })),
+              ]}
+              width="100%"
+              onChange={(next) => props.onSelectWorkspaceProject(next || undefined)}
+            />
+          )}
+        />
+      </SettingsSection>
       <SettingsSection titleId="remote-access-active-heading" title={copy.active} description={copy.sortHint}>
           {activeChannels.length === 0 ? (
             // Section-local absence (DESIGN.md §10 tier 1): no icon, no

@@ -41,7 +41,6 @@ type RuntimeHostBotSessionClient = Pick<
   | 'getSession'
   | 'openSession'
   | 'startTurn'
-  | 'updateSessionConfiguration'
 >;
 
 export interface RuntimeHostBotSessionCreateTarget {
@@ -76,7 +75,12 @@ export function createRuntimeHostBotSessionAdapter(
           name: input.name,
           labels: [...input.labels],
           modelTarget: { kind: 'default' },
-          permissionMode: 'explore',
+          // A Bot message arrives from an outside chat with no way to answer a
+          // desktop approval prompt, so the Session runs unattended instead of
+          // queueing prompts nobody is watching. The channel is enabled on the
+          // desktop by the person who owns these credentials; whoever can post
+          // to it acts with their authority.
+          permissionMode: 'bypass',
         });
       } catch (error) {
         if (
@@ -93,6 +97,9 @@ export function createRuntimeHostBotSessionAdapter(
       return session.id;
     },
 
+    // Only liveness: the Bot must notice a binding whose Session was archived
+    // or removed so it can rebind. It deliberately does not touch the
+    // Session's configuration — that belongs to whoever opened the desktop.
     async prepareSession(sessionId) {
       let session: SessionCatalogProjection | null;
       try {
@@ -104,23 +111,6 @@ export function createRuntimeHostBotSessionAdapter(
       if (!session || session.isArchived) {
         throw unavailableSession(sessionId);
       }
-      if (session.permissionMode === 'explore') return 'ready';
-
-      try {
-        session = await deps.client.updateSessionConfiguration(sessionId, {
-          permissionMode: 'explore',
-        });
-      } catch (error) {
-        throwUnavailable(error, sessionId);
-        if (isPermissionUpdateRefusal(error)) return 'permission_refused';
-        throw error;
-      }
-      if (session.isArchived) {
-        throw unavailableSession(sessionId);
-      }
-      if (session.permissionMode !== 'explore') return 'permission_refused';
-      deps.emitSessionsChanged('updated', sessionId);
-      return 'ready';
     },
 
     async runTurn({ sessionId, turnId, text, onReplySnapshot }) {
@@ -234,14 +224,6 @@ function throwUnavailable(error: unknown, sessionId: string): void {
   ) {
     throw unavailableSession(sessionId, error);
   }
-}
-
-function isPermissionUpdateRefusal(error: unknown): boolean {
-  return (
-    (error instanceof RuntimeHostOperationError &&
-      (error.code === 'session_busy' || error.code === 'operation_conflict')) ||
-    (error instanceof DesktopRuntimeHostClientError && error.code === 'revision_conflict')
-  );
 }
 
 function unavailableSession(sessionId: string, cause?: unknown): BotSessionUnavailableError {

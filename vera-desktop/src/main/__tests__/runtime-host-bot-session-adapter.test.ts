@@ -36,7 +36,7 @@ import { runtimeHostSessionFixture } from './runtime-host-session-test-fixture.j
 
 type BotClient = RuntimeHostBotSessionAdapterDeps['client'];
 
-test('creates an explore Session through the Host-owned default model route', async () => {
+test('creates an unattended Session through the Host-owned default model route', async () => {
   const creates: unknown[] = [];
   const changes: unknown[] = [];
   const client = botClient({
@@ -68,7 +68,7 @@ test('creates an explore Session through the Host-owned default model route', as
       name: 'Telegram conversation',
       labels: ['bot', 'telegram'],
       modelTarget: { kind: 'default' },
-      permissionMode: 'explore',
+      permissionMode: 'bypass',
     },
   ]);
   assert.deepEqual(changes, [
@@ -76,25 +76,16 @@ test('creates an explore Session through the Host-owned default model route', as
   ]);
 });
 
-test('prepares a bound Session without exposing Host configuration revisions to the Bot', async () => {
-  const updates: unknown[] = [];
-  const client = botClient({
-    getSession: async () => session('bot-session-1', { permissionMode: 'ask' }),
-    updateSessionConfiguration: async (sessionId, patch) => {
-      updates.push({ sessionId, patch });
-      return session(sessionId, { permissionMode: 'explore' });
-    },
-  });
+test('prepares a bound Session by checking liveness alone', async () => {
   const adapter = createRuntimeHostBotSessionAdapter({
-    client,
+    client: botClient({
+      getSession: async () => session('bot-session-1', { permissionMode: 'bypass' }),
+    }),
     resolveCreateTarget: hostPathCreateTarget,
     emitSessionsChanged() {},
   });
 
-  assert.equal(await adapter.prepareSession('bot-session-1'), 'ready');
-  assert.deepEqual(updates, [
-    { sessionId: 'bot-session-1', patch: { permissionMode: 'explore' } },
-  ]);
+  await adapter.prepareSession('bot-session-1');
 
   const unavailable = createRuntimeHostBotSessionAdapter({
     client: botClient({ getSession: async () => null }),
@@ -107,8 +98,8 @@ test('prepares a bound Session without exposing Host configuration revisions to 
   );
 });
 
-test('rejects archived Sessions before and after a permission transition', async () => {
-  const initiallyArchived = createRuntimeHostBotSessionAdapter({
+test('rejects an archived Session', async () => {
+  const adapter = createRuntimeHostBotSessionAdapter({
     client: botClient({
       getSession: async () =>
         session('bot-session-1', { isArchived: true, status: 'active' }),
@@ -117,25 +108,7 @@ test('rejects archived Sessions before and after a permission transition', async
     emitSessionsChanged() {},
   });
   await assert.rejects(
-    initiallyArchived.prepareSession('bot-session-1'),
-    BotSessionUnavailableError,
-  );
-
-  const archivedDuringUpdate = createRuntimeHostBotSessionAdapter({
-    client: botClient({
-      getSession: async () => session('bot-session-1', { permissionMode: 'ask' }),
-      updateSessionConfiguration: async (sessionId) =>
-        session(sessionId, {
-          permissionMode: 'explore',
-          isArchived: true,
-          status: 'active',
-        }),
-    }),
-    resolveCreateTarget: hostPathCreateTarget,
-    emitSessionsChanged() {},
-  });
-  await assert.rejects(
-    archivedDuringUpdate.prepareSession('bot-session-1'),
+    adapter.prepareSession('bot-session-1'),
     BotSessionUnavailableError,
   );
 });
@@ -400,7 +373,6 @@ function botClient(overrides: Partial<BotClient>): BotClient {
     getSession: unexpected,
     openSession: unexpected,
     startTurn: unexpected,
-    updateSessionConfiguration: unexpected,
     ...overrides,
   };
 }

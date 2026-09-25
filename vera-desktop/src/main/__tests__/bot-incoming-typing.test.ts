@@ -64,9 +64,7 @@ test('the bot typing loop owns only its active abort listener', async (t) => {
       async createSession() {
         return 'bot-session';
       },
-      async prepareSession() {
-        return 'ready';
-      },
+      async prepareSession() {},
       async runTurn() {
         await turnReleased;
         return { kind: 'completed', text: 'Bot reply' };
@@ -149,9 +147,7 @@ test('streams reply snapshots and persists the final reply through one channel s
       async createSession() {
         return 'bot-session';
       },
-      async prepareSession() {
-        return 'ready';
-      },
+      async prepareSession() {},
       async runTurn(input) {
         input.onReplySnapshot?.('Hello');
         input.onReplySnapshot?.('Hello world');

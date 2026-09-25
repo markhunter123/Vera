@@ -22,8 +22,6 @@ export interface BotSessionCreateInput {
   readonly labels: readonly string[];
 }
 
-export type BotSessionPreparation = 'ready' | 'permission_refused';
-
 export type BotSessionTurnResult =
   | { readonly kind: 'completed'; readonly text: string }
   | { readonly kind: 'suspended' }
@@ -31,7 +29,8 @@ export type BotSessionTurnResult =
 
 export interface BotSessionAdapter {
   createSession(input: BotSessionCreateInput): Promise<string>;
-  prepareSession(sessionId: string): Promise<BotSessionPreparation>;
+  /** Resolves when the bound Session can still take a Turn; throws otherwise. */
+  prepareSession(sessionId: string): Promise<void>;
   runTurn(input: {
     readonly sessionId: string;
     readonly turnId: string;

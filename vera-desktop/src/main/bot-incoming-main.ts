@@ -28,7 +28,7 @@ import {
   nonTextMessageAck,
   plaintextHelpReply,
 } from '@vera/core/bot-events';
-import { generalizedErrorMessage } from '@vera/core/redaction';
+import { generalizedErrorMessage, redactSecrets } from '@vera/core/redaction';
 import type { BotIncomingMessage, BotRegistry, BotReplyStream } from '@vera/runtime/bots';
 import type { BotSessionAdapter, BotSessionTurnResult } from './bot-session-adapter.js';
 import { isBotSessionUnavailableError } from './bot-session-adapter.js';
@@ -276,12 +276,7 @@ export function createBotIncomingMainService(deps: BotIncomingMainServiceDeps): 
       } else {
         let rebound = false;
         try {
-          const permissionModeOk = await ensureBotSessionExploreMode(
-            sessionId,
-            message,
-            SYSTEM_NOTICE_TTL_MS,
-          );
-          if (!permissionModeOk) return;
+          await deps.sessions.prepareSession(sessionId);
         } catch (error) {
           if (!isBotSessionUnavailableError(error)) throw error;
           invalidateSessionBindings(sessionId);
@@ -389,9 +384,15 @@ export function createBotIncomingMainService(deps: BotIncomingMainServiceDeps): 
     } catch (error) {
       await replyStream?.abort().catch(() => {});
       if (closed) return;
+      // The generic fallback swallows precisely the failures the classifier
+      // cannot name — a Runtime Host refusal, for one — and those are the ones
+      // the user has to act on. Keep the raw error on the main-process console
+      // and carry a redacted excerpt into the notice so the chat itself says
+      // what went wrong.
+      console.error('[bot] incoming message failed:', error);
       const detail = isSessionWorkspaceUnavailableError(error)
         ? '工作目录不可用，请在桌面端选择有效目录后重试'
-        : generalizedErrorMessage(error, '机器人对话处理失败');
+        : generalizedErrorMessage(error, `机器人对话处理失败（${botFailureSummary(error)}）`);
       const replyOptions = {
         ...(message.sourceMessageId ? { replyToMessageId: message.sourceMessageId } : {}),
         // Error notice: same 5-minute TTL as the other transient system
@@ -407,21 +408,13 @@ export function createBotIncomingMainService(deps: BotIncomingMainServiceDeps): 
     }
   }
 
-  async function ensureBotSessionExploreMode(
-    sessionId: string,
-    message: BotIncomingMessage,
-    noticeTtlMs: number,
-  ): Promise<boolean> {
-    if ((await deps.sessions.prepareSession(sessionId)) === 'ready') return true;
-    await sendTransientBotNotice(
-      message,
-      'Vera 已拒绝这条机器人消息：绑定任务当前不是只读探索模式，请先在桌面端切回 explore 后再试。',
-      noticeTtlMs,
-    );
-    return false;
-  }
-
   return { handleBotIncomingMessage, invalidateSessionBindings, close };
+}
+
+/** Redacted single-line excerpt of a failure, for the chat-facing notice. */
+function botFailureSummary(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return redactSecrets(message).replace(/\s+/g, ' ').trim().slice(0, 160) || '未知错误';
 }
 
 function botReply(result: BotSessionTurnResult): string {

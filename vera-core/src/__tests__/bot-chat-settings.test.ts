@@ -22,6 +22,7 @@ import { describe, test } from 'node:test';
 import {
   createDefaultBotChatSettings,
   mergeBotChatSettings,
+  normalizeBotChatSettings,
   parseAllowedUserIdsFromText,
 } from '../bot-chat-settings.js';
 
@@ -42,6 +43,30 @@ describe('bot chat settings owner', () => {
       tokenPatched.channels.telegram.allowedUserIds,
       withAllowlist.channels.telegram.allowedUserIds,
     );
+  });
+
+  // The workspace Project is a top-level field, so it rides no per-channel
+  // merge arm: it needs its own, and `normalize` — which rebuilds the record
+  // field by field — has to name it too or a reload would silently drop it.
+  test('keeps the workspace Project across unrelated patches and clears it on the empty string', () => {
+    const defaults = createDefaultBotChatSettings();
+    const selected = mergeBotChatSettings(defaults, { workspaceProjectId: ' project-1 ' });
+    assert.equal(selected.workspaceProjectId, 'project-1');
+
+    const tokenPatched = mergeBotChatSettings(selected, {
+      channels: { wechat: { token: 'wechat-token' } },
+    });
+    assert.equal(tokenPatched.workspaceProjectId, 'project-1');
+
+    const cleared = mergeBotChatSettings(selected, { workspaceProjectId: '' });
+    assert.equal(cleared.workspaceProjectId, undefined);
+
+    const normalized = normalizeBotChatSettings(
+      { ...defaults, workspaceProjectId: 'project-1' },
+      { workspaceProjectId: 'project-1' },
+    );
+    assert.equal(normalized.workspaceProjectId, 'project-1');
+    assert.equal(normalizeBotChatSettings(defaults, undefined).workspaceProjectId, undefined);
   });
 
   test('parses textarea allowlists with trim, deduplication, and the defensive cap', () => {

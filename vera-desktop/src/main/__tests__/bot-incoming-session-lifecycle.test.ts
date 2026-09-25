@@ -48,7 +48,6 @@ describe('bot session lifecycle bindings', () => {
         if (sessionId === 'bot-session-1' && ensureCalls === 1) {
           throw new BotSessionUnavailableError('archived');
         }
-        return 'ready' as const;
       },
       async runTurn({ sessionId }: { sessionId: string }) {
         sent.push(sessionId);

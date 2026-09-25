@@ -63,6 +63,9 @@ export function BotChatSettingsPage(props: {
     BotStatus
   > | null>(null);
   const [statusLoadError, setStatusLoadError] = useState<string | null>(null);
+  const [workspaceProjects, setWorkspaceProjects] = useState<
+    ReadonlyArray<{ readonly id: string; readonly name: string }>
+  >([]);
   const channel = props.settings.botChat.channels[selected];
   const toast = useToast();
   const locale = useUiLocale();
@@ -149,6 +152,42 @@ export function BotChatSettingsPage(props: {
   ): Promise<boolean> {
     return updateChannelFor(selected, patch);
   }
+
+  /** The stored value is a Project id; the Host resolves it into a workspace
+   *  when the next Bot Session is created. */
+  async function updateWorkspaceProject(projectId: string | undefined): Promise<void> {
+    try {
+      // The empty string is how the settings layer spells "cleared".
+      await props.onUpdate({ botChat: { workspaceProjectId: projectId ?? '' } });
+    } catch (error) {
+      if (botPageMountedRef.current) {
+        toast.error(
+          copy.saveFailed(botCopy.overview.workspaceLabel),
+          settingsActionErrorMessage(error, locale),
+        );
+      }
+    }
+  }
+
+  // Presentation only: a Project that is archived or whose directory is gone
+  // cannot host a Session, so it must not be offered as a choice.
+  useEffect(() => {
+    let active = true;
+    void window.vera.projects
+      .getSnapshot()
+      .then((snapshot) => {
+        if (!active) return;
+        setWorkspaceProjects(
+          snapshot.projects
+            .filter((project) => project.available)
+            .map(({ id, name }) => ({ id, name })),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -374,8 +413,11 @@ export function BotChatSettingsPage(props: {
         channels={props.settings.botChat.channels}
         statuses={statuses}
         statusLoadError={statusLoadError}
+        workspaceProjectId={props.settings.botChat.workspaceProjectId}
+        projects={workspaceProjects}
         onOpenChannel={openChannel}
         onRefreshStatuses={refreshBotStatuses}
+        onSelectWorkspaceProject={(projectId) => void updateWorkspaceProject(projectId)}
       />
     );
   }
