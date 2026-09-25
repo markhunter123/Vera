@@ -190,6 +190,27 @@ jobs:
           Get-Content "$env:WINDOWS_BASELINE_LOG_DIR/storage-full.log"
           exit $exitCode
 
+      # The Rust executor tests are pure logic (no window/UI calls), and the
+      # TS suite runs its mock executor through node, so both lanes pass on a
+      # headless runner. cargo runs from the crate directory so rustup picks
+      # up the pinned toolchain from rust-toolchain.toml.
+      - id: computer_use
+        name: Run Computer Use Windows executor and TS gates
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          Push-Location native/vera-cu-windows
+          cargo.exe test 2>&1 | Tee-Object -FilePath "$env:WINDOWS_BASELINE_LOG_DIR/cu-executor.log"
+          $cargoExit = $LASTEXITCODE
+          Pop-Location
+          npm.cmd --workspace @vera/computer-use run test 2>&1 |
+            Tee-Object -FilePath "$env:WINDOWS_BASELINE_LOG_DIR/cu-ts.log"
+          $tsExit = $LASTEXITCODE
+          Get-Content "$env:WINDOWS_BASELINE_LOG_DIR/cu-executor.log"
+          exit ([Math]::Max($cargoExit, $tsExit))
+
       - id: processes
         name: Audit residual job processes
         if: always()
@@ -290,6 +311,7 @@ jobs:
           | Build | ${{ steps.build.outcome }} |
           | CLI / Electron smoke | ${{ steps.smoke.outcome }} |
           | Storage path/lock gates | ${{ steps.storage.outcome }} |
+          | Computer Use executor + TS gates | ${{ steps.computer_use.outcome }} |
           | Runtime PTY input | ${{ steps.runtime_pty_input.outcome }} |
           | Runtime PowerShell UTF-8 | ${{ steps.runtime_powershell_encoding.outcome }} |
           | Full storage suite (nightly or manual opt-in) | ${{ steps.storage_full.outcome }} |

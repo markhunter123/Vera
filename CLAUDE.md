@@ -61,16 +61,23 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 
 ### 3. Rust 组件构建（本机无 VS 构建工具）
 
-`native/runtime-host-peer` 钉死 rustc 1.98.0（`rust-toolchain.toml`）。本机用 clang-cl + lld-link + Windows SDK 免 VS 构建：
+两个 Rust 组件都钉死 rustc 1.98.0（各自 `rust-toolchain.toml`；rustup 按 cwd 解析，构建脚本里用 `cwd=crate` 而非 `--manifest-path`）。本机用 clang-cl + lld-link + xwin Windows SDK 免 VS 构建；xwin 解包缓存在 `%LOCALAPPDATA%\xwin-cache\splat`（SDK 10.0.26100，`--disable-symlinks` 下载），旧的 `%LOCALAPPDATA%\cargo-xwin\xwin` 缓存已失效。
+
+- **`native/vera-cu-windows`（CU 执行器）**：env 块已封装在脚本里，直接跑：
+
+```powershell
+node scripts/computer-use/prepare-windows.mjs
+```
+
+- **`native/runtime-host-peer`（napi 组件）**：手工 env（LIB 是 xwin 的 `x86_64` 目录，INCLUDE 走系统 Kits）：
 
 ```powershell
 $shim='D:\project\llvm-shims'; $llvm='C:\Program Files\LLVM\bin'
-$kits='C:\Program Files (x86)\Windows Kits\10'
-$xwin='C:\Users\Monday\AppData\Local\cargo-xwin\xwin'
+$xwin="$env:LOCALAPPDATA\xwin-cache\splat"
 $env:PATH = "$shim;$llvm;$env:PATH"
 $env:CC="$llvm\clang-cl.exe"; $env:CXX="$llvm\clang-cl.exe"
-$env:INCLUDE="$kits\Include\10.0.18362.0\shared;$kits\Include\10.0.18362.0\um;$kits\Include\10.0.18362.0\ucrt;$xwin\crt\include"
-$env:LIB="$kits\Lib\10.0.18362.0\um\x64;$kits\Lib\10.0.18362.0\ucrt\x64;$xwin\crt\lib\x86_64"
+$env:INCLUDE='C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\shared;C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\um;C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\ucrt'
+$env:LIB="$xwin\sdk\lib\um\x86_64;$xwin\sdk\lib\ucrt\x86_64;$xwin\crt\lib\x86_64"
 $env:CARGO_ENCODED_RUSTFLAGS="-Clinker=$llvm\lld-link.exe"
 $env:VERA_RUNTIME_HOST_PEER_CARGO_TARGET='x86_64-pc-windows-msvc'
 node native/runtime-host-peer/build.mjs

@@ -690,6 +690,7 @@ const CLIENT_CAPABILITY_SCHEMA_TYPES = new Set([
 const CLIENT_CAPABILITY_SCHEMA_KEYWORDS = new Set([
   '$defs',
   '$ref',
+  'additionalItems',
   'additionalProperties',
   'allOf',
   'anyOf',

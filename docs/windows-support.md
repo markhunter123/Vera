@@ -80,7 +80,7 @@ NSIS **Abort 路径**上，安装器
 - 由当前 Windows 11 安装提供的 WebView/runtime 组件；
 - 仅对创建文件 symlink 的测试需要 Windows 开发者模式或提升权限。常规 CLI 和桌面启动不得要求其中任何一项。
 
-Windows 10、Windows on Arm、签名自动更新、最终 sandbox 支持声明和 computer-use 不在当前支持目标范围内。打包安装仅以上述未签名的 Windows 11 x64 预览形式提供；其自动更新路径经 CI 验证但未签名。
+Windows 10、Windows on Arm、签名自动更新、最终 sandbox 支持声明和打包分发的 computer-use 执行器不在当前支持目标范围内。打包安装仅以上述未签名的 Windows 11 x64 预览形式提供；其自动更新路径经 CI 验证但未签名。
 
 ## 可复现性检查
 
@@ -146,6 +146,50 @@ Windows 恢复证据区分应用进程崩溃与操作系统或设备断电。通
 根测试超时与个别测试失败分开跟踪。第 1 阶段必须让 workspace 运行器在 Windows 上输出进度、终止其子进程
 并产生有界的汇总。
 
+## 权限中心
+
+macOS 的辅助功能、屏幕录制、自动化（Apple Events）、通知四项都是 TCC（透明同意控制）授权闸门；Windows
+没有一一对应物。权限中心在 Windows 上的语义如下：
+
+- **辅助功能 / 屏幕录制 / 自动化**：显示为「已授权」。Windows 对键盘鼠标合成（`SendInput`）、截屏
+  （GDI `BitBlt`/`PrintWindow`）与跨进程 UIA 读取没有系统级授权闸门——这些 API 在普通用户进程里始终
+  可用，因此不存在"缺少授权"这回事。真实边界是 **UIPI（用户界面特权隔离）**：中等完整性级别的进程
+  无法自动化或读取提权（管理员）窗口；受保护内容（UAC 提示、DRM）截屏为黑帧。这个安全模型写在各项的
+  说明文字里，不假装存在一个可以打开的设置面板。
+- **通知**：保持「无法读取状态」。Windows 的逐 App toast 开关在该 App 发出第一条通知前不存在于注册表，
+  Focus Assist 状态完全不在注册表中，同步探测不可行；提供「前往系统设置」直达 `ms-settings:notifications`。
+
+之所以把前三项映射为「已授权」而不是「不支持」：能力就绪度推导把 required 权限的非 granted 状态视为硬
+阻断——Computer Use 声明辅助功能与屏幕录制为必需权限，若显示「不支持」，Windows 上的 Computer Use 将
+永远显示未就绪，而实际上什么都不缺。高风险自动化的审批约束不变：按目标与动作类别的授权租约、审计与
+可撤销性由 Vera 自身的权限层执行，与 OS 无关。
+
+## Computer Use（Windows 执行器）
+
+Computer Use 在 Windows 上有原生执行器 `native/vera-cu-windows`（Rust，`vera.cu/2` 协议），与 macOS 的
+Swift 执行器以同一份 host 契约对接：窗口枚举（`EnumWindows` + `DWMWA_CLOAKED` 过滤幽灵窗）、元素树
+（UI Automation `CUIAutomation8`，元素 token/digest 溯源）、截屏（窗口 `PrintWindow`、全屏 `BitBlt`，
+WIC 编 PNG）与键鼠合成（`SendInput`）。构建与产物钉扎由 `scripts/computer-use/prepare-windows.mjs`
+完成，写入 `vera-desktop/bundled-tools.json` 的 `veraCuWindows` 键（SHA-256、commit、协议版本）。
+
+语义差异必须说清楚：
+
+- **键鼠全部经系统级 `SendInput` 合成**。macOS 的辅助功能路径有 pid 作用域的合成入口，Windows 没有——
+  每个 point 动作移动的都是真实系统光标。因此 Windows 握手声明 `allowGlobalPointer: true`
+  （`cg_event_global`），执行器按动作逐条如实上报路径；宿主的物理输入守卫（用户正在操作键鼠时拒绝
+  合成）与屏幕锁定守卫在 Windows 上同样生效。
+- **UIPI 边界**：中等完整性级别的 Vera 无法合成输入到或读取提权（管理员）窗口——对这类目标的动作
+  会得到域拒绝，而不是静默失败或权限提示；UAC 提示与受保护内容的截屏是黑帧。
+- **修饰键映射**：`command` 映射为 `Win` 键，`option` 映射为 `Alt`；`fn` 无 Windows 对应物，执行器
+  拒绝该修饰键。
+- **仅开发形态**：`distributionReady` 保持 `false`（Windows 签名未解决，与 macOS 条目同一状态），
+  打包构建拒绝使用该执行器；从源码运行 `node scripts/computer-use/prepare-windows.mjs` 后
+  （见 CLAUDE.md 的工具链说明），开发启动会经过完整性校验启用它。
+
+CI 在 windows-baseline 诊断通道运行执行器 `cargo test` 与 vera-computer-use 的 TS 套件；两者都不需要
+真实桌面交互。真实桌面冒烟（`host.hello` → `window.list` → `observe` → `screen.capture`）需在有
+交互会话的机器上手动执行。
+
 ## 当前能力边界
 
 - CLI `--help`、`--version`、TUI 启动和非交互命令都是原生 Node.js 路径。
@@ -159,7 +203,7 @@ Windows 恢复证据区分应用进程崩溃与操作系统或设备断电。通
   文件系统别名、受限 TCP 出站网络、宿主命名管道、环境变量、宿主注册表值、父进程 token、后代拒绝或
   AppContainer/Job 继承。它不声称覆盖 UDP/DNS/SMB 强制、本地入站监听器强制、推迟的无 Win32k/window-station 层，
   或直接的 Credential Manager/DPAPI 隔离。
-- Computer-use 没有 Windows 后端。
+- Computer Use 使用从本仓库源码构建的 Rust 执行器（见上方小节）；进入打包分发前仍需解决 Windows 签名。
 - Windows x64 NSIS 安装包未签名。应用内自动更新路径（electron-updater →
   NSIS 交接 → 重新启动）在 CI 中针对 loopback feed 完成端到端验证；生产
   GitHub feed 配置由单元测试钉死。在 Authenticode 证书落地之前，更新不做签名验证。
