@@ -53,6 +53,13 @@ type ToastApi = {
     diagnosticDetails?: string,
     diagnosticTarget?: { sessionId: string } | { profileId: string },
   ): void;
+  confirm(options: {
+    title: string;
+    description: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    destructive?: boolean;
+  }): Promise<boolean>;
 };
 
 export interface AppShellProjectActions {
@@ -65,6 +72,7 @@ export interface AppShellProjectActions {
   relinkProject(projectId: string, selectAfter?: boolean): Promise<ProjectRecord | null>;
   renameProject(projectId: string, name: string): Promise<void>;
   archiveProject(projectId: string): Promise<void>;
+  removeProject(projectId: string): Promise<void>;
   restoreProject(projectId: string): Promise<void>;
   openProjectFolder(): Promise<void>;
   openWorkspaceFolder(): Promise<void>;
@@ -307,6 +315,29 @@ export function createAppShellProjectActions(deps: {
     }
   }
 
+  // The sidebar menu's "remove": same store mutation as archive, but named for
+  // what the user asked for and confirmed first — the settings page runs the
+  // identical archive call behind its own confirm.
+  async function removeProject(projectId: string): Promise<void> {
+    const project = projects.find((candidate) => candidate.id === projectId);
+    const name = project?.name ?? copy.currentProject;
+    let confirmed: boolean;
+    try {
+      confirmed = await toastApi.confirm({
+        title: copy.removeProjectTitle(name),
+        description: copy.removeProjectDescription,
+        confirmLabel: copy.removeProjectConfirm,
+        cancelLabel: copy.removeProjectCancel,
+        destructive: true,
+      });
+    } catch {
+      return; // Confirm dialog unavailable — keep the project rather than guess.
+    }
+    if (!confirmed) return;
+    await archiveProject(projectId);
+    toastApi.success(copy.removeProjectDoneTitle);
+  }
+
   async function restoreProject(projectId: string): Promise<void> {
     try {
       await runOnDefaultRuntimeHost(async (host) => {
@@ -408,6 +439,7 @@ export function createAppShellProjectActions(deps: {
     relinkProject,
     renameProject,
     archiveProject,
+    removeProject,
     restoreProject,
     openProjectFolder,
     openWorkspaceFolder,

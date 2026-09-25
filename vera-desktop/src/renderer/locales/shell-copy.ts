@@ -189,6 +189,11 @@ type ShellCopy = {
     directorySwitchedTitle: string;
     projectUpdateFailedTitle: string;
     projectUpdateFailedFallback: string;
+    removeProjectTitle(name: string): string;
+    removeProjectDescription: string;
+    removeProjectConfirm: string;
+    removeProjectCancel: string;
+    removeProjectDoneTitle: string;
     catalogUnavailable: string;
     retryCatalog: string;
     remoteDirectoryTitle(host: string): string;
@@ -793,6 +798,11 @@ const SHELL_COPY_BY_LOCALE = {
       directorySwitchedTitle: '已切换工作目录',
       projectUpdateFailedTitle: '项目操作失败',
       projectUpdateFailedFallback: '暂时无法更新项目，请稍后重试。',
+      removeProjectTitle: (name: string) => `从 Vera 移除 "${name}"？`,
+      removeProjectDescription: '项目会从侧栏移到"已归档项目"，可随时恢复；它下面的任务会移到"未归属"分组。磁盘上的文件不受影响。',
+      removeProjectConfirm: '移除',
+      removeProjectCancel: '取消',
+      removeProjectDoneTitle: '已从 Vera 移除项目',
       catalogUnavailable: 'Runtime Host 暂时不可用',
       retryCatalog: '重试加载',
       remoteDirectoryTitle: (host: string) => `在 ${host} 上添加项目`,
@@ -1321,6 +1331,11 @@ const SHELL_COPY_BY_LOCALE = {
       directorySwitchedTitle: 'Working directory changed',
       projectUpdateFailedTitle: 'Could not update project',
       projectUpdateFailedFallback: 'The project could not be updated. Try again later.',
+      removeProjectTitle: (name: string) => `Remove "${name}" from Vera?`,
+      removeProjectDescription: 'The project moves from the sidebar to "Archived projects" and can be restored anytime; its tasks move to the "No project" group. Files on disk are not touched.',
+      removeProjectConfirm: 'Remove',
+      removeProjectCancel: 'Cancel',
+      removeProjectDoneTitle: 'Project removed from Vera',
       catalogUnavailable: 'Runtime Hosts unavailable',
       retryCatalog: 'Retry loading',
       remoteDirectoryTitle: (host: string) => `Add a project on ${host}`,

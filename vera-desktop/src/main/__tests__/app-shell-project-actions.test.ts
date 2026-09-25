@@ -49,7 +49,11 @@ function createTestProjectActions(
     projects: [],
     projectCapabilities: NO_PROJECT_CAPABILITIES,
     onProjectSelected: () => {},
-    toastApi: { success: () => {}, error: () => {} },
+    toastApi: {
+      success: () => {},
+      error: () => {},
+      confirm: async () => false,
+    },
     ...overrides,
   });
 }
@@ -98,6 +102,7 @@ test('Project errors preserve the Host authority of the failed operation', async
     error: (_title: string, _description?: string, _details?: string, target?: unknown) => {
       diagnosticTargets.push(target);
     },
+    confirm: async () => false,
   };
   globalThis.window = {
     vera: {

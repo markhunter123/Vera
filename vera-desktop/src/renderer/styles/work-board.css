@@ -23,6 +23,9 @@
   gap: 12px;
   min-height: 0;
   padding: 12px;
+  /* The panel owns scrolling now: rows are split across state groups and the
+     archived Collapsible, so no single list element is the scroll container. */
+  overflow-y: auto;
 }
 
 .vera-work-board-filters {
@@ -35,11 +38,6 @@
   gap: 8px;
 }
 
-.vera-work-board-create-input {
-  flex: 1;
-  min-width: 0;
-}
-
 .vera-work-board-list {
   display: flex;
   flex-direction: column;
@@ -47,14 +45,36 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  overflow-y: auto;
+}
+
+/* A state group: heading + its rows. Sections with zero items never mount,
+   so there is no "empty group" treatment to design for. */
+.vera-work-board-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vera-work-board-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground-secondary);
+}
+
+.vera-work-board-group-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
 }
 
 .vera-work-board-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px;
   border-radius: 6px;
 }
@@ -68,16 +88,47 @@
 }
 
 .vera-work-board-row-main {
+  min-width: 0;
+}
+
+.vera-work-board-rename-input {
+  width: 100%;
+}
+
+.vera-work-board-headline {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .vera-work-board-title {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.vera-work-board-notes {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.vera-work-board-agent-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: oklch(from var(--foreground) l c h / 0.05);
+  color: var(--foreground-secondary);
 }
 
 .vera-work-board-archived-tag {
@@ -87,8 +138,12 @@
 
 .vera-work-board-row-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+}
+
+.vera-work-board-archived-group ul {
+  margin-top: 6px;
 }
 
 .vera-work-board-message {

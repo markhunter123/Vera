@@ -1517,6 +1517,7 @@ function AppShellContent({
     relinkProject,
     renameProject,
     archiveProject,
+    removeProject,
     restoreProject,
     openProjectFolder,
     openWorkspaceFolder,
@@ -1651,6 +1652,7 @@ function AppShellContent({
           onNew: createSessionInProject,
           onRename: renameProject,
           onArchive: archiveProject,
+          onRemove: removeProject,
           onRestore: restoreProject,
           ...(projectCapabilities.chooseClientDirectory
             ? {
