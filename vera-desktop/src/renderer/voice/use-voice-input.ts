@@ -63,8 +63,11 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
   optionsRef.current = options;
   const recordingRef = useRef<VoiceRecording | null>(null);
   const autoStopTimerRef = useRef<number | null>(null);
-  // Mounted flag: the async stop→transcribe chain must not touch state
-  // after unmount or after the feature was switched off mid-flight.
+  // Active-session flag: true from click-to-record until the stop→transcribe
+  // chain settles (or unmount cancels the capture). The guards in the async
+  // chain check this so a mid-flight unmount drops the result instead of
+  // touching state — a manual stop must NOT clear it, or the audio would be
+  // discarded before recognition ever runs.
   const activeRef = useRef(false);
 
   const clearAutoStop = useCallback(() => {
@@ -120,6 +123,8 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       }
     } finally {
       if (activeRef.current) setState('idle');
+      // The session ends here whether it produced text or an error.
+      activeRef.current = false;
     }
   }, [teardownRecording]);
 
@@ -127,7 +132,6 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
     if (!optionsRef.current.enabled) return;
     if (state === 'transcribing') return;
     if (state === 'recording') {
-      activeRef.current = false;
       void finishRecording();
       return;
     }
@@ -160,7 +164,6 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       setState('recording');
       autoStopTimerRef.current = window.setTimeout(() => {
         autoStopTimerRef.current = null;
-        activeRef.current = false;
         void finishRecording();
       }, VOICE_MAX_DURATION_MS);
     } catch (error) {
