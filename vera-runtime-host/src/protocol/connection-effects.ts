@@ -50,6 +50,9 @@ const EFFECT_ERRORS = [
   'commit_outcome_unknown',
 ] as const;
 
+/** ponytail: 改写输入/输出的跨线上限;整段草稿 + 生成文本,256KB 足够宽松。 */
+const PROMPT_SEGMENT_MAX_BYTES = 256 * 1024;
+
 export const CONNECTION_EFFECT_CHANGED_DOMAINS = [
   'connection',
   'credential',
@@ -191,6 +194,37 @@ export type ConnectionTestRunResult =
   | ConnectionEffectRejected
   | ConnectionEffectSuperseded;
 
+export const CONNECTION_PROMPT_RUN_REJECTION_REASONS = [
+  'no_connection',
+  ...CONNECTION_EFFECT_REJECTION_REASONS,
+] as const;
+export type ConnectionPromptRunRejectionReason =
+  (typeof CONNECTION_PROMPT_RUN_REJECTION_REASONS)[number];
+
+export interface ConnectionPromptRunInput {
+  readonly system: string;
+  readonly prompt: string;
+}
+
+/**
+ * One-shot completion against the catalog's default target. Read-only: no
+ * ticket, no catalog commit — the effect machinery exists only to resolve
+ * connection + secret host-side, keeping the credential fail-closed.
+ */
+export type ConnectionPromptRunResult =
+  | { readonly kind: 'ok'; readonly text: string }
+  | {
+      readonly kind: 'rejected';
+      readonly reason: ConnectionPromptRunRejectionReason;
+    }
+  | {
+      readonly kind: 'failed';
+      readonly errorClass: ConnectionEffectFailureClass;
+      /** Present when the provider answered with a status; keeps 408 vs a
+       *  local abort distinguishable in the renderer. */
+      readonly statusCode?: number;
+    };
+
 export const CONNECTION_EFFECT_OPERATION_SPECS = {
   'connection.onboarding.save': defineOperation<
     ConnectionOnboardingSaveInput,
@@ -235,6 +269,17 @@ export const CONNECTION_EFFECT_OPERATION_SPECS = {
     errors: EFFECT_ERRORS,
     decodeInput: decodeConnectionTestRunInput,
     decodeOutput: decodeConnectionTestRunResult,
+  }),
+  'connection.prompt.run': defineOperation<
+    ConnectionPromptRunInput,
+    ConnectionPromptRunResult,
+    (typeof EFFECT_ERRORS)[number]
+  >({
+    mode: 'command',
+    availability: 'ready',
+    errors: EFFECT_ERRORS,
+    decodeInput: decodeConnectionPromptRunInput,
+    decodeOutput: decodeConnectionPromptRunResult,
   }),
 } as const;
 
@@ -385,6 +430,48 @@ export function decodeConnectionTestRunInput(value: unknown): ConnectionTestRunI
     modelId:
       input.modelId === null ? null : decodeDomain(() => decodeConnectionModelId(input.modelId)),
   };
+}
+
+export function decodeConnectionPromptRunInput(value: unknown): ConnectionPromptRunInput {
+  const input = requireExactRecord(value, 'connection prompt run input', ['system', 'prompt']);
+  return {
+    system: requireString(input.system, 'connection prompt system', PROMPT_SEGMENT_MAX_BYTES),
+    prompt: requireString(input.prompt, 'connection prompt', PROMPT_SEGMENT_MAX_BYTES),
+  };
+}
+
+export function decodeConnectionPromptRunResult(value: unknown): ConnectionPromptRunResult {
+  const result = requireRecord(value, 'connection prompt run result');
+  if (result.kind === 'ok') {
+    const ok = requireExactRecord(result, 'ok connection prompt run result', ['kind', 'text']);
+    return { kind: 'ok', text: requireString(ok.text, 'connection prompt text', PROMPT_SEGMENT_MAX_BYTES) };
+  }
+  if (result.kind === 'failed') {
+    const failed = requireRecord(result, 'failed connection prompt run result');
+    const statusCode = failed.statusCode;
+    if (
+      statusCode !== undefined &&
+      (!Number.isSafeInteger(statusCode) || (statusCode as number) <= 0)
+    ) {
+      throw invalidProtocolFrame('Invalid connection prompt run failure status');
+    }
+    return {
+      kind: 'failed',
+      errorClass: effectFailureClass(failed.errorClass),
+      ...(statusCode === undefined ? {} : { statusCode: statusCode as number }),
+    };
+  }
+  const rejected = requireExactRecord(result, 'rejected connection prompt run result', [
+    'kind',
+    'reason',
+  ]);
+  if (
+    typeof rejected.reason !== 'string' ||
+    !(CONNECTION_PROMPT_RUN_REJECTION_REASONS as readonly string[]).includes(rejected.reason)
+  ) {
+    throw invalidProtocolFrame('Invalid connection prompt run rejection');
+  }
+  return { kind: 'rejected', reason: rejected.reason as ConnectionPromptRunRejectionReason };
 }
 
 export function decodeConnectionModelFetchResult(value: unknown): ConnectionModelFetchResult {

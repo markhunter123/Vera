@@ -83,6 +83,7 @@ export type ConnectionEffectOperationKey = Extract<
   | 'connection.test.run'
   | 'connection.onboarding.verify'
   | 'connection.onboarding.save'
+  | 'connection.prompt.run'
 >;
 export type MessageOperationKey = Extract<
   OperationKey,

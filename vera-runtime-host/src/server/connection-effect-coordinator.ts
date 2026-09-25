@@ -28,6 +28,7 @@ import {
   PROVIDER_DEFAULTS,
   deriveConnectionSlug,
   providerAuthSupportsApiKey,
+  type RuntimeExecutionConnection,
 } from '@vera/core/llm-connections';
 import {
   createConnectionEffectFetchTransport,
@@ -37,6 +38,7 @@ import {
 import { createRequestCustomizationFetch } from '@vera/runtime/request-customization-fetch';
 import { isOAuthSubscriptionProvider } from '@vera/runtime/subscription-credentials';
 import { runConnectionModelDiscoveryEffect } from '@vera/runtime/model-fetcher';
+import { runPromptCompletionEffect, type PromptRunEffectOutcome } from '@vera/runtime/prompt-run';
 import { runConnectionTestEffect } from '@vera/runtime/test-connection';
 import {
   type ConnectionEffectErrorKind,
@@ -62,6 +64,7 @@ import type {
   ConnectionOnboardingVerifyInput,
   ConnectionOnboardingSaveInput,
   ConnectionOnboardingSaveResult,
+  ConnectionPromptRunInput,
   ConnectionTestProjection,
   ConnectionTestRunInput,
   ConnectionTestRunResult,
@@ -85,6 +88,14 @@ type ConnectionTestRunner = (
   modelId?: string,
 ) => Promise<ConnectionTestEffectOutcome>;
 
+type PromptRunRunner = (
+  connection: RuntimeExecutionConnection,
+  apiKey: string,
+  modelId: string,
+  input: { readonly system: string; readonly prompt: string },
+  options: ConnectionEffectFetchDependency,
+) => Promise<PromptRunEffectOutcome>;
+
 export interface HostConnectionEffectCoordinatorOptions {
   readonly stores: RuntimePolicyStoresWriter;
   readonly activation: RuntimePolicyActivationGate;
@@ -93,6 +104,7 @@ export interface HostConnectionEffectCoordinatorOptions {
   readonly now?: () => number;
   readonly runModelDiscovery?: ModelDiscoveryRunner;
   readonly runConnectionTest?: ConnectionTestRunner;
+  readonly runPromptRun?: PromptRunRunner;
   readonly createTransport?: (
     proxy: ConnectionEffectProxySnapshot | null,
   ) => ConnectionEffectFetchTransport;
@@ -105,6 +117,7 @@ export class HostConnectionEffectCoordinator {
     'connection.onboarding.verify': (input) => this.#verifyOnboarding(input),
     'connection.models.fetch': (input) => this.#fetchModels(input),
     'connection.test.run': (input) => this.#testConnection(input),
+    'connection.prompt.run': (input) => this.#runPrompt(input),
   };
 
   readonly #stores: RuntimePolicyStoresWriter;
@@ -114,6 +127,7 @@ export class HostConnectionEffectCoordinator {
   readonly #now: () => number;
   readonly #runModelDiscovery: ModelDiscoveryRunner;
   readonly #runConnectionTest: ConnectionTestRunner;
+  readonly #runPromptRun: PromptRunRunner;
   readonly #createTransport: (
     proxy: ConnectionEffectProxySnapshot | null,
   ) => ConnectionEffectFetchTransport;
@@ -129,6 +143,7 @@ export class HostConnectionEffectCoordinator {
     this.#now = options.now ?? Date.now;
     this.#runModelDiscovery = options.runModelDiscovery ?? runConnectionModelDiscoveryEffect;
     this.#runConnectionTest = options.runConnectionTest ?? runConnectionTestEffect;
+    this.#runPromptRun = options.runPromptRun ?? runPromptCompletionEffect;
     this.#createTransport = options.createTransport ?? createConnectionEffectFetchTransport;
   }
 
@@ -360,12 +375,76 @@ export class HostConnectionEffectCoordinator {
     });
   }
 
+  #runPrompt(input: ConnectionPromptRunInput): Promise<OperationOutcome<'connection.prompt.run'>> {
+    // Single lane: one composer, one rewrite in flight at a time.
+    return this.#admit('connection.prompt.run', 'connection.prompt.run', async () => {
+      try {
+        const catalog = await this.#stores.connectionCatalog.getSnapshot();
+        const target = catalog.defaultTarget;
+        const connection = target
+          ? catalog.connections.find(({ connectionId }) => connectionId === target.connectionId)
+          : undefined;
+        if (!target || !connection) return { kind: 'rejected', reason: 'no_connection' };
+        const prepared = await this.#stores.operations.beginConnectionTest(
+          connection.connectionId,
+          target.modelId,
+        );
+        if (prepared.kind !== 'ready') {
+          return {
+            kind: 'rejected',
+            reason: prepared.kind satisfies ConnectionEffectRejectionReason,
+          };
+        }
+        const modelId = prepared.modelId ?? connection.enabledModelIds[0];
+        if (!modelId) return { kind: 'rejected', reason: 'provider_action_unavailable' };
+        const effect = await this.#withTransport(prepared, (fetch, secret) =>
+          this.#runPromptRun(
+            promptRunConnection(prepared.connection, modelId),
+            secret,
+            modelId,
+            { system: input.system, prompt: input.prompt },
+            { fetch },
+          ),
+        );
+        if (!effect.ok) {
+          return {
+            kind: 'failed',
+            errorClass: effect.error.kind,
+            ...(effect.error.statusCode === undefined
+              ? {}
+              : { statusCode: effect.error.statusCode }),
+          };
+        }
+        // The protocol's ok.text is a non-empty string; a blank rewrite is a
+        // provider-side no-answer, not a protocol violation.
+        const text = effect.text.trim();
+        if (text.length === 0) return { kind: 'failed', errorClass: 'invalid_response' };
+        return { kind: 'ok', text };
+      } catch (error) {
+        // The borrowed machinery (beginConnectionTest, withTransport) throws
+        // internal errors that are not store codes. They must not surface as
+        // an opaque internal_failure: log the stack for the diagnostics
+        // report (host stderr is discarded — the log buffer is the only way
+        // out) and answer with the declared failure shape.
+        console.error(
+          `[runtime-host] connection.prompt.run failed: ${
+            error instanceof Error
+              ? error.stack ?? `${error.name}: ${error.message}`
+              : String(error)
+          }`,
+        );
+        return { kind: 'failed', errorClass: 'unknown' as const };
+      }
+    });
+  }
+
   #admit<
     K extends
       | 'connection.models.fetch'
       | 'connection.test.run'
       | 'connection.onboarding.verify'
-      | 'connection.onboarding.save',
+      | 'connection.onboarding.save'
+      | 'connection.prompt.run',
   >(
     connectionId: string,
     operation: K,
@@ -563,7 +642,8 @@ function storeFailure<
     | 'connection.models.fetch'
     | 'connection.test.run'
     | 'connection.onboarding.verify'
-    | 'connection.onboarding.save',
+    | 'connection.onboarding.save'
+    | 'connection.prompt.run',
 >(error: unknown): OperationOutcome<K> {
   if (!(error instanceof RuntimePolicyStoreError)) throw error;
   switch (error.code) {
@@ -588,12 +668,30 @@ function operationFailure<
     | 'connection.models.fetch'
     | 'connection.test.run'
     | 'connection.onboarding.verify'
-    | 'connection.onboarding.save',
+    | 'connection.onboarding.save'
+    | 'connection.prompt.run',
 >(
   code: 'commit_outcome_unknown' | 'persistence_failed' | 'invalid_request',
   message: string,
 ): OperationOutcome<K> {
   return { ok: false, error: { code, message } } as OperationOutcome<K>;
+}
+
+/** ponytail: getAIModel 只读 slug/providerType/baseUrl/models/overlay;defaultModel 用解析出的 modelId 补齐。
+ *  overlay 故意不传:withTransport 的 fetch 已经注入过它,而应用两次会在第二次
+ *  合并时抛 "Extra request body conflicts with a generated field"。 */
+function promptRunConnection(
+  entry: ConnectionCatalogEntry,
+  modelId: string,
+): RuntimeExecutionConnection {
+  return {
+    slug: entry.slug,
+    providerType: entry.providerType,
+    ...(entry.baseUrl === undefined ? {} : { baseUrl: entry.baseUrl }),
+    defaultModel: modelId,
+    ...(entry.models.length > 0 ? { models: [...entry.models] } : {}),
+    ...(entry.relayModelProfiles ? { relayModelProfiles: entry.relayModelProfiles } : {}),
+  };
 }
 
 function transientConnection(

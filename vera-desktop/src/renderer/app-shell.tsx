@@ -85,6 +85,7 @@ import { AgentGraphPanel } from './agent-graph-panel';
 import { ChatComposerRegion } from './chat-composer-region';
 import { useVoiceInput } from './voice/use-voice-input';
 import { getVoiceInputCopy } from './voice/voice-copy';
+import { usePromptOptimizer, getPromptOptimizeCopy } from './use-prompt-optimize';
 import {
   WorkbarHost,
   WorkbarTitlebarActions,
@@ -806,6 +807,25 @@ function AppShellContent({
               },
             }
           : {}),
+      });
+    },
+  });
+  // Prompt optimize (优化提示词): rewrite the composer draft in place via
+  // the host's default provider. No settings gate — an empty draft or a
+  // missing connection simply disables the button (ponytail).
+  const promptOptimizeCopy = getPromptOptimizeCopy(uiLocale);
+  const promptOptimizer = usePromptOptimizer({
+    getText: () => composerRef.current?.getText() ?? '',
+    onText: (text) => {
+      composerRef.current?.setText(text);
+      composerRef.current?.focus();
+    },
+    onError: (error) => {
+      toastApi.toast({
+        variant: 'warning',
+        title: promptOptimizeCopy.failedTitle,
+        description: promptOptimizeCopy.errorText(error),
+        duration: 10_000,
       });
     },
   });
@@ -2940,6 +2960,10 @@ function AppShellContent({
                   voiceInput={voiceInputEnabled
                     ? { state: voiceInput.state, onToggle: voiceInput.toggle }
                     : undefined}
+                  promptOptimizer={{
+                    state: promptOptimizer.state,
+                    onOptimize: promptOptimizer.optimize,
+                  }}
                   queuedMessages={activeMessageQueue?.entries}
                   queuedMessageRevision={activeMessageQueue?.queueRevision}
                   onPromoteQueuedEntry={activeId ? promoteQueuedEntry : undefined}

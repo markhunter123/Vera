@@ -262,6 +262,16 @@ export const Composer = forwardRef<
       /** Click behavior: start recording, stop + recognize, or no-op. */
       onToggle(): void;
     };
+    /**
+     * Prompt optimization (优化提示词): host-owned one-shot rewrite of the
+     * draft via the default provider. Mirrors the voiceInput contract —
+     * the host owns the call and error reporting; the composer only
+     * mirrors state on the button (right of the mic, in sendActions).
+     */
+    promptOptimizer?: {
+      state: 'idle' | 'optimizing';
+      onOptimize(): void;
+    };
     queuedMessages?: readonly MessageQueueEntryProjection[];
     queuedMessageRevision?: number;
     /** Promote a queued follow-up into the active Turn (调整方向). */
@@ -1361,6 +1371,13 @@ export const Composer = forwardRef<
     : props.streaming === true
       ? 'streaming-draft'
       : !text.trim() ? 'empty' : 'idle';
+  // 优化提示词 needs a draft to rewrite and a provider to rewrite it with;
+  // while a rewrite is in flight the button locks (one rewrite at a time).
+  const optimizeDisabled =
+    props.promptOptimizer === undefined ||
+    props.promptOptimizer.state === 'optimizing' ||
+    !text.trim() ||
+    noModelConnection;
   // The pending plate renders the follow-up queue only: steering entries are
   // already handed to the active Turn and leave the plate at that moment.
   const queueCount = props.queuedMessages?.length ?? 0;
@@ -2071,35 +2088,65 @@ export const Composer = forwardRef<
               ))}
             </div>
           )}
-          sendActions={props.voiceInput ? (
-            // Voice input lives in the sendActions slot — beside the send
-            // button, never inside it. The sendButton slot stays a single
-            // control (composer-send-toggle.test.tsx contract); the mic is
-            // a peer, styled by the owner stylesheet (composer.css).
-            <IconButton
-              variant="ghost"
-              type="button"
-              size="md"
-              className="vera-composer-voice"
-              data-voice-state={props.voiceInput.state}
-              aria-busy={props.voiceInput.state === 'transcribing' ? 'true' : undefined}
-              label={
-                props.voiceInput.state === 'recording'
-                  ? copy.voiceStopLabel
-                  : props.voiceInput.state === 'transcribing'
-                    ? copy.voiceTranscribingLabel
-                    : copy.voiceInputLabel
-              }
-              tooltip={
-                props.voiceInput.state === 'recording'
-                  ? copy.voiceStopLabel
-                  : props.voiceInput.state === 'transcribing'
-                    ? copy.voiceTranscribingLabel
-                    : copy.voiceInputLabel
-              }
-              onClick={props.voiceInput.onToggle}
-              icon={<Mic size={ICON_SIZE.control} aria-hidden="true" />}
-            />
+          sendActions={props.voiceInput || props.promptOptimizer ? (
+            <>
+              {props.promptOptimizer ? (
+                // 优化提示词 lives in the sendActions slot, left of the mic:
+                // same ghost peer shape, one slot further from the send
+                // anchor. Sparkles is the product's established "AI does
+                // something" glyph.
+                <IconButton
+                  variant="ghost"
+                  type="button"
+                  size="md"
+                  className="vera-composer-optimize"
+                  aria-busy={props.promptOptimizer.state === 'optimizing' ? 'true' : undefined}
+                  label={
+                    props.promptOptimizer.state === 'optimizing'
+                      ? copy.promptOptimizingLabel
+                      : copy.promptOptimizeLabel
+                  }
+                  tooltip={
+                    props.promptOptimizer.state === 'optimizing'
+                      ? copy.promptOptimizingLabel
+                      : copy.promptOptimizeLabel
+                  }
+                  isDisabled={optimizeDisabled}
+                  onClick={props.promptOptimizer.onOptimize}
+                  icon={<Sparkles size={ICON_SIZE.control} aria-hidden="true" />}
+                />
+              ) : null}
+              {props.voiceInput ? (
+                // The mic sits beside the send button — never inside it. The
+                // sendButton slot stays a single control
+                // (composer-send-toggle.test.tsx contract); peers are styled
+                // by the owner stylesheet (composer.css).
+                <IconButton
+                  variant="ghost"
+                  type="button"
+                  size="md"
+                  className="vera-composer-voice"
+                  data-voice-state={props.voiceInput.state}
+                  aria-busy={props.voiceInput.state === 'transcribing' ? 'true' : undefined}
+                  label={
+                    props.voiceInput.state === 'recording'
+                      ? copy.voiceStopLabel
+                      : props.voiceInput.state === 'transcribing'
+                        ? copy.voiceTranscribingLabel
+                        : copy.voiceInputLabel
+                  }
+                  tooltip={
+                    props.voiceInput.state === 'recording'
+                      ? copy.voiceStopLabel
+                      : props.voiceInput.state === 'transcribing'
+                        ? copy.voiceTranscribingLabel
+                        : copy.voiceInputLabel
+                  }
+                  onClick={props.voiceInput.onToggle}
+                  icon={<Mic size={ICON_SIZE.control} aria-hidden="true" />}
+                />
+              ) : null}
+            </>
           ) : undefined}
           sendButton={stopShown ? (
             <IconButton

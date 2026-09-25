@@ -30,6 +30,9 @@ export const RENDERER_RUNTIME_HOST_QUERY_OPERATIONS = [
 ] as const satisfies readonly (keyof OperationSpecMap)[];
 
 export const RENDERER_RUNTIME_HOST_COMMAND_OPERATIONS = [
+  // Prompt optimize (优化提示词): one-shot rewrite through the default
+  // provider — text in, text out, the secret never leaves the host.
+  'connection.prompt.run',
   'daily-review.mutate',
   'scheduled-task.mutate',
   'web-search.execute',
