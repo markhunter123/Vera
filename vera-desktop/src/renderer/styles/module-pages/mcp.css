@@ -35,41 +35,6 @@
   fill: currentColor;
 }
 
-.vera-mcp-install-icon {
-  position: relative;
-  display: grid;
-  place-items: center;
-}
-
-.vera-mcp-install-icon svg {
-  position: absolute;
-}
-
-.vera-mcp-install-spinner { animation: vera-spin 1s linear infinite; }
-
-.vera-mcp-install-cancel {
-  opacity: 0;
-  color: var(--destructive-text);
-  transform: scale(var(--scale-press));
-  transition: transform var(--duration-quick) var(--ease-out-strong);
-}
-
-.vera-mcp-install-button:hover .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-spinner,
-.vera-mcp-install-button:focus-visible .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-spinner {
-  opacity: 0;
-}
-
-.vera-mcp-install-button:hover .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-cancel,
-.vera-mcp-install-button:focus-visible .vera-mcp-install-icon[data-phase="installing"] .vera-mcp-install-cancel,
-.vera-mcp-install-icon[data-phase="cancelling"] .vera-mcp-install-cancel {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.vera-mcp-install-icon[data-phase="cancelling"] .vera-mcp-install-spinner {
-  opacity: 0;
-}
-
 
 /* The endpoint <code> inside a browse row's supporting line. Follows the
    description to the shared class; the rule is still live, it just lost its

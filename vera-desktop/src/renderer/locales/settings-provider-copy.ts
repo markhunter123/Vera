@@ -179,7 +179,7 @@ const zhCopy = {
     createSubtitle: '完成必要配置后，连接会出现在模型页上方。', connection: '模型连接',
     count: (value: number) => `· ${value}`, connectTitle: (name: string) => `连接 ${name}`,
     chipAria: (name: string, provider: string, isDefault: boolean, status?: string) => `模型连接：${name}，供应商：${provider}${isDefault ? '，默认连接' : ''}${status ? `，${status}` : ''}`,
-    addConnection: '添加连接', category: '分类', backToList: '返回模型连接', backToCatalog: '返回服务商列表',
+    addConnection: '添加连接', category: '分类', backToList: '返回模型连接', backToCatalog: '返回服务商列表', cloudSection: '云端模型', localSection: '本地部署',
   },
   catalog: {
     unavailable: '未开放',
@@ -329,7 +329,7 @@ const enCopy: ProviderSettingsCopy = {
     createSubtitle: 'After required setup, the connection appears above on the Models page.', connection: 'Model connection',
     count: (value: number) => `· ${value}`, connectTitle: (name: string) => `Connect ${name}`,
     chipAria: (name: string, provider: string, isDefault: boolean, status?: string) => `Model connection: ${name}; provider: ${provider}${isDefault ? '; default connection' : ''}${status ? `; ${status}` : ''}`,
-    addConnection: 'Add connection', category: 'Category', backToList: 'Back to model connections', backToCatalog: 'Back to the provider list',
+    addConnection: 'Add connection', category: 'Category', backToList: 'Back to model connections', backToCatalog: 'Back to the provider list', cloudSection: 'Cloud models', localSection: 'Local deployments',
   },
   catalog: {
     unavailable: 'Unavailable',

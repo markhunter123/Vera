@@ -36,11 +36,6 @@
   color: var(--muted-foreground);
 }
 
-.vera-skill-install-complete-icon {
-  display: inline-flex;
-  color: var(--success);
-}
-
 .vera-skill-inspector {
   min-width: 0;
 }

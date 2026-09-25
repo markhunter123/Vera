@@ -26,8 +26,9 @@
 // - header: title, a live count line, 添加 MCP and refresh;
 // - toolbar (the header's last row, fixed): the hub switch, the 市场 /
 //   已安装 SegmentedControl and search;
-// - content: dense Astryx List rows — the market's card grid is gone, brand
-//   marks ride the rows;
+// - content: the market is a responsive card grid — one card per offering,
+//   clicking it installs (clicking again mid-flight cancels); the installed
+//   tab stays a dense Astryx List whose rows open the inspector;
 // - inspector: selecting an installed row opens it, and every per-server
 //   control (enable / test / edit / delete) plus the connection
 //   diagnostics live there.
@@ -66,6 +67,7 @@ import {
   Toolbar,
   VStack,
 } from '@astryxdesign/core';
+import { ClickableCard } from '@astryxdesign/core/ClickableCard';
 import {
   Dialog,
   DialogHeader,
@@ -89,6 +91,7 @@ import {
 
 import {
   ICON_SIZE,
+  Check,
   FileCode,
   Globe,
   Loader2,
@@ -97,7 +100,6 @@ import {
   RefreshCcw,
   Search,
   Terminal,
-  X,
 } from '@vera/ui/icons';
 import { getMcpCatalog, catalogEntryMatches, type McpCatalogEntry } from './mcp-catalog';
 import { McpBrandMark, hasMcpBrandMark } from './mcp-brand-marks';
@@ -505,51 +507,65 @@ export function McpPage(props: { hubHeader?: ModuleHubHeader }) {
           actions={<Button variant="ghost" size="sm" label={copy.page.clearSearch} onClick={() => setQuery('')} />}
         />
       ) : (
-        <List density="balanced" hasDividers className="vera-module-page-rows" aria-label={copy.page.market}>
+        <div role="group" aria-label={copy.page.market} className="vera-catalog-grid vera-module-page-rows">
           {marketEntries.map((entry) => {
             const installed = Boolean(config.mcpServers[entry.id]);
+            const phase = installPhases[entry.id];
             return (
-              <ListItem
+              <ClickableCard
                 key={entry.id}
-                data-vera-contract="mcp-market-row"
-                label={entry.name}
-                description={[
-                  entry.description,
-                  [entry.category, entry.setupLabel].filter(Boolean).join(' · '),
-                ].filter(Boolean).join(' · ')}
-                startContent={(
-                  <span
-                    className="vera-module-market-icon"
-                    data-brand={entry.id}
-                    data-logo={hasMcpBrandMark(entry.id) ? 'true' : undefined}
-                    aria-hidden="true"
-                  >
-                    <McpBrandMark entry={entry} />
+                className="vera-catalog-card"
+                label={
+                  installed ? copy.card.manage
+                  : phase === 'installing' ? copy.card.cancelAria(entry.name)
+                  : phase === 'cancelling' ? copy.card.cancellingAria(entry.name)
+                  : copy.card.installAria(entry.name)
+                }
+                isDisabled={phase === 'cancelling'}
+                onClick={
+                  installed
+                    ? () => {
+                        const server = config.mcpServers[entry.id];
+                        if (server) openEdit(entry.id, server);
+                      }
+                    : phase === 'installing'
+                      ? () => void cancelCatalogInstall(entry)
+                      : () => void installCatalogEntry(entry)
+                }
+                elevation="low"
+                padding={3}
+              >
+                <span
+                  className="vera-module-market-icon"
+                  data-brand={entry.id}
+                  data-logo={hasMcpBrandMark(entry.id) ? 'true' : undefined}
+                  aria-hidden="true"
+                >
+                  <McpBrandMark entry={entry} />
+                </span>
+                <span className="vera-catalog-card-body">
+                  <span className="vera-catalog-card-title">
+                    <span className="vera-catalog-card-name">{entry.name}</span>
+                    {phase === 'installing' || phase === 'cancelling' ? (
+                      <Loader2 size={ICON_SIZE.chrome} className="vera-catalog-card-spinner" aria-hidden="true" />
+                    ) : installed ? (
+                      <span className="vera-catalog-card-badge">
+                        <Check size={ICON_SIZE.chrome} aria-hidden="true" />
+                        {copy.page.installed}
+                      </span>
+                    ) : null}
                   </span>
-                )}
-                endContent={installed ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const server = config.mcpServers[entry.id];
-                      if (server) openEdit(entry.id, server);
-                    }}
-                    label={copy.card.manage}
-                  />
-                ) : (
-                  <McpInstallButton
-                    entry={entry}
-                    copy={copy}
-                    phase={installPhases[entry.id]}
-                    onInstall={() => void installCatalogEntry(entry)}
-                    onCancel={() => void cancelCatalogInstall(entry)}
-                  />
-                )}
-              />
+                  <span className="vera-catalog-card-desc">{entry.description}</span>
+                  {(entry.category || entry.setupLabel) && (
+                    <span className="vera-catalog-card-meta">
+                      {[entry.category, entry.setupLabel].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                </span>
+              </ClickableCard>
             );
           })}
-        </List>
+        </div>
       )}
     </div>
   );
@@ -789,34 +805,6 @@ function mcpImportFailureMessage(
     case 'protocol-version':
       return copy.errors.importProtocolVersion;
   }
-}
-
-function McpInstallButton(props: {
-  entry: McpCatalogEntry;
-  copy: McpCopy;
-  phase?: InstallPhase;
-  onInstall(): void;
-  onCancel(): void;
-}) {
-  const installing = props.phase === 'installing';
-  const cancelling = props.phase === 'cancelling';
-  return (
-    <IconButton
-      className="vera-mcp-install-button"
-      size="sm"
-      variant="ghost"
-      label={cancelling ? props.copy.card.cancellingAria(props.entry.name) : installing ? props.copy.card.cancelAria(props.entry.name) : props.copy.card.installAria(props.entry.name)}
-      tooltip={cancelling ? props.copy.card.cancelling : installing ? props.copy.card.cancel : props.copy.card.install}
-      onClick={installing ? props.onCancel : props.onInstall}
-      isDisabled={cancelling}
-      icon={props.phase ? (
-        <span className="vera-mcp-install-icon" data-phase={props.phase}>
-          <Loader2 size={ICON_SIZE.chrome} className="vera-mcp-install-spinner" aria-hidden="true" />
-          <X size={ICON_SIZE.chrome} className="vera-mcp-install-cancel" aria-hidden="true" />
-        </span>
-      ) : <Plus size={ICON_SIZE.chrome} aria-hidden="true" />}
-    />
-  );
 }
 
 function McpServerInspector(props: {

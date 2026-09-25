@@ -25,8 +25,10 @@
 // - header: title, a live count line, and one overflow menu of page actions;
 // - toolbar (the header's last row, fixed): the hub switch, the 市场 / 内置 /
 //   已安装 SegmentedControl, search, and the market's category/sort filters;
-// - content: dense Astryx List rows, not cards;
-// - inspector: selecting an installed row opens it, and every per-skill
+// - content: the 市场/内置 catalogs are responsive card grids — one card per
+//   offering, clicking the card installs it; the installed tab stays a dense
+//   Astryx List whose rows open the inspector, and every per-skill action
+//   lives there (skill-inspector.tsx).
 //   action lives there (skill-inspector.tsx).
 //
 // Layout owns scroll containment, so the view switch can never scroll away
@@ -53,7 +55,6 @@ import { deriveCapabilityAuditReport } from '@vera/core/capability-audit';
 import {
   Button as UiButton,
   EmptyState,
-  IconButton,
   List,
   ListItem,
   SegmentedControl,
@@ -64,6 +65,7 @@ import {
   TextInput,
   Toolbar,
 } from '@astryxdesign/core';
+import { ClickableCard } from '@astryxdesign/core/ClickableCard';
 import type { SelectorOptionData } from '@astryxdesign/core/Selector';
 import {
   DropdownMenu,
@@ -333,28 +335,50 @@ export function SkillsModuleMain(props: {
     { value: 'recent', label: copy.market.sortRecent },
   ];
 
-  // ── Catalog rows (市场 / 内置): one job each — install. ──────────────
-  function catalogInstallButton(key: string, name: string, installing: boolean, installed: boolean, onInstall?: () => void) {
-    const installIcon = installing
-      ? <Loader2 size={ICON_SIZE.chrome} aria-hidden="true" />
-      : installed
-        ? (
-          <span className="vera-skill-install-complete-icon">
-            <Check size={ICON_SIZE.chrome} aria-hidden="true" />
-          </span>
-        )
-        : <Download size={ICON_SIZE.chrome} aria-hidden="true" />;
+  // ── Catalog cards (市场 / 内置): one job each — install. ─────────────
+  // The card itself is the button (Astryx ClickableCard's hidden <button>
+  // carries the role, so the badge and spinner inside stay inert). Installed
+  // cards stay focusable with aria-disabled, matching the old disabled
+  // button's contract.
+  function catalogCard(props: {
+    id: string;
+    name: string;
+    description: string;
+    meta: string | null;
+    installed: boolean;
+    installing: boolean;
+    onInstall?: () => void;
+  }) {
+    const { id, name, description, meta, installed, installing, onInstall } = props;
     return (
-      <IconButton
-        key={key}
-        variant="secondary"
-        size="sm"
-        onClick={onInstall}
-        isDisabled={installed || skillActionBusy || !onInstall}
+      <ClickableCard
+        key={id}
+        className="vera-catalog-card"
         label={installed ? copy.install.installedAction(name) : copy.install.action(name)}
-        tooltip={installed ? copy.install.installedTitle : copy.install.action(name)}
-        icon={installIcon}
-      />
+        isDisabled={installed || skillActionBusy || !onInstall}
+        onClick={onInstall}
+        elevation="low"
+        padding={3}
+      >
+        <span className="vera-module-market-icon" aria-hidden="true">
+          <Blocks size={ICON_SIZE.empty} />
+        </span>
+        <span className="vera-catalog-card-body">
+          <span className="vera-catalog-card-title">
+            <span className="vera-catalog-card-name">{name}</span>
+            {installing ? (
+              <Loader2 size={ICON_SIZE.chrome} className="vera-catalog-card-spinner" aria-hidden="true" />
+            ) : installed ? (
+              <span className="vera-catalog-card-badge">
+                <Check size={ICON_SIZE.chrome} aria-hidden="true" />
+                {copy.install.installed}
+              </span>
+            ) : null}
+          </span>
+          <span className="vera-catalog-card-desc">{description}</span>
+          {meta && <span className="vera-catalog-card-meta">{meta}</span>}
+        </span>
+      </ClickableCard>
     );
   }
 
@@ -403,36 +427,22 @@ export function SkillsModuleMain(props: {
           )}
         />
       ) : (
-        <List density="balanced" hasDividers className="vera-module-page-rows" aria-label={copy.market.ariaLabel}>
+        <div role="group" aria-label={copy.market.ariaLabel} className="vera-catalog-grid vera-module-page-rows">
           {marketSources.map((source) => {
             const installed = skills.some((skill) => skill.id === source.id);
-            return (
-              <ListItem
-                key={source.id}
-                label={source.name}
-                description={[
-                  copy.categories[source.category],
-                  installed ? copy.install.installed : null,
-                  source.description || copy.market.sourceFallback,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-                startContent={(
-                  <span className="vera-module-market-icon" aria-hidden="true">
-                    <Blocks size={ICON_SIZE.empty} />
-                  </span>
-                )}
-                endContent={catalogInstallButton(
-                  source.id,
-                  source.name,
-                  pendingSkillAction === `source:install:${source.id}`,
-                  installed,
-                  props.onInstallManagedSkill ? () => void runSkillAction(`source:install:${source.id}`, () => props.onInstallManagedSkill?.(source.id)) : undefined,
-                )}
-              />
-            );
+            return catalogCard({
+              id: source.id,
+              name: source.name,
+              description: source.description || copy.market.sourceFallback,
+              meta: copy.categories[source.category],
+              installed,
+              installing: pendingSkillAction === `source:install:${source.id}`,
+              onInstall: props.onInstallManagedSkill
+                ? () => void runSkillAction(`source:install:${source.id}`, () => props.onInstallManagedSkill?.(source.id))
+                : undefined,
+            });
           })}
-        </List>
+        </div>
       )}
     </div>
   );
@@ -454,50 +464,39 @@ export function SkillsModuleMain(props: {
           actions={<UiButton variant="ghost" size="sm" label={copy.market.clearSearch} onClick={() => setSkillSearchQuery('')} />}
         />
       ) : (
-        // One List per category when grouping is on, each carrying its own
-        // heading; a single flat List otherwise. `header` is List's own slot,
-        // so the heading is associated with its rows rather than floating
-        // above them as loose text.
+        // One card grid per category when grouping is on, each carrying its
+        // own heading; a single flat grid otherwise. The heading is a
+        // section's label, so it stays associated with its cards rather than
+        // floating above them as loose text.
         ((showBundledGroups ? bundledCatalogGroups : [[null, bundledCatalogFiltered] as const]).map(([category, entries]) => (
-      <List
-        key={category ?? 'all'}
-        density="balanced"
-        hasDividers
-        className="vera-module-page-rows"
-        aria-label={category ? copy.categories[category] : copy.builtin.ariaLabel}
-        header={category ? <Text type="label" size="sm" color="secondary">{copy.categories[category]}</Text> : undefined}
-      >
-        {entries.map((entry) => (
-          <ListItem
-            key={entry.id}
-            label={entry.name}
-            description={[
-              // The category is the group heading when grouping is on;
-              // repeating it on every row under that heading is the
-              // duplicate-count noise we removed from this page before.
-              showBundledGroups ? null : copy.categories[entry.category],
-              entry.declaredTools.length > 0
-                ? copy.builtin.toolCount(entry.declaredTools.length)
-                : null,
-              entry.description || copy.builtin.fallback,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-            startContent={(
-              <span className="vera-module-market-icon" aria-hidden="true">
-                <Blocks size={ICON_SIZE.empty} />
-              </span>
-            )}
-            endContent={catalogInstallButton(
-              entry.id,
-              entry.name,
-              pendingSkillAction === `bundled:install:${entry.id}`,
-              entry.installed,
-              props.onInstallBundledSkill ? () => void runSkillAction(`bundled:install:${entry.id}`, () => props.onInstallBundledSkill?.(entry.id)) : undefined,
-            )}
-          />
-        ))}
-      </List>
+          <section
+            key={category ?? 'all'}
+            className="vera-catalog-section"
+            aria-label={category ? copy.categories[category] : copy.builtin.ariaLabel}
+          >
+            {category ? <Text type="label" size="sm" color="secondary">{copy.categories[category]}</Text> : null}
+            <div className="vera-catalog-grid vera-module-page-rows">
+              {entries.map((entry) => catalogCard({
+                id: entry.id,
+                name: entry.name,
+                // The category is the group heading when grouping is on;
+                // repeating it on every card under that heading is the
+                // duplicate-count noise we removed from this page before.
+                meta: [
+                  showBundledGroups ? null : copy.categories[entry.category],
+                  entry.declaredTools.length > 0
+                    ? copy.builtin.toolCount(entry.declaredTools.length)
+                    : null,
+                ].filter(Boolean).join(' · ') || null,
+                description: entry.description || copy.builtin.fallback,
+                installed: entry.installed,
+                installing: pendingSkillAction === `bundled:install:${entry.id}`,
+                onInstall: props.onInstallBundledSkill
+                  ? () => void runSkillAction(`bundled:install:${entry.id}`, () => props.onInstallBundledSkill?.(entry.id))
+                  : undefined,
+              }))}
+            </div>
+          </section>
         )))
       )}
     </div>

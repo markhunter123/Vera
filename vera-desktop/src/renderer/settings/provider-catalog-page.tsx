@@ -25,6 +25,7 @@ import {
   ListItem,
   Section,
   Selector,
+  Text,
   VStack,
 } from '@astryxdesign/core';
 import { ICON_SIZE, Check, ChevronRight, Search } from '@vera/ui/icons';
@@ -77,7 +78,10 @@ export type SetupTarget =
 
 /**
  * Level 2: the provider catalog. Search plus a category filter over the 55
- * keyed providers and the account sign-ins, one row each.
+ * keyed providers and the account sign-ins, one row each. Cloud rows sit
+ * above local deployments; the two groups carry labels only when both are on
+ * screen — the split matters in the mixed "all" view, not in a
+ * single-category one.
  *
  * This used to be step 1 of a Dialog. It is a page because it is a
  * destination, not an interruption — Astryx's own Dialog guidance says "if the
@@ -93,7 +97,6 @@ export function ProviderCatalogPage(props: {
   const locale = useUiLocale();
   const providerCopy = getProviderSettingsCopy(locale);
   const copy = providerCopy.panel;
-  const catalogCopy = providerCopy.catalog;
   const { query, category } = props.filter;
   const showsOAuth = category === 'all' || category === 'recommended' || category === 'accounts';
   const oauth = useOAuthCards({ query: showsOAuth ? query : undefined });
@@ -103,6 +106,14 @@ export function ProviderCatalogPage(props: {
   // toolbar the busiest row on the page.
   const categoryOptions = CATALOG_CATEGORIES.map((value) => ({ value, label: copy.tabs[value] }));
   const providers = providersForCategory(category, query, locale);
+  // Cloud access and local runtimes are different acquisition paths: cloud
+  // rows are things you sign up for, local rows are servers already running
+  // on this machine. One flat list made a local runtime read as just another
+  // sign-up option, so the catalog splits — cloud first, local last.
+  const localProviders = providers.filter((type) => PROVIDER_DEFAULTS[type].catalogGroup === 'local');
+  const cloudProviders = providers.filter((type) => PROVIDER_DEFAULTS[type].catalogGroup !== 'local');
+  const oauthCards = showsOAuth ? oauth.cards : [];
+  const splitsGroups = (oauthCards.length > 0 || cloudProviders.length > 0) && localProviders.length > 0;
   const isEmpty = providers.length === 0 && (!showsOAuth || oauth.cards.length === 0);
 
   return (
@@ -151,56 +162,89 @@ export function ProviderCatalogPage(props: {
           )}
         />
       ) : (
-        <List hasDividers>
-          {showsOAuth && oauth.cards.map((card) => (
-            <ListItem
-              key={card.id}
-              className="providerCatalogRow"
-              data-card-id={card.id}
-              data-provider={card.providerType}
-              data-status="ready"
-              data-logged-in={card.isLoggedIn ? 'true' : undefined}
-              startContent={<ProviderLogo type={card.providerType} />}
-              label={/* a11y-allow: this label names the ROW, not the span. Astryx's Item puts consumer props on its outer wrapper and renders a separate invisible <button> for the click target, so an aria-label on the Item never reaches that button — measured. The button is named from its content, and this span is how the status reaches that name. Removing it drops the runtime error from the row's accessible name (settings.spec:226).*/ <span aria-label={providerCopy.oauthSection.cardAria(card.name, card.status, card.description)}>{card.name}</span>}
-              description={card.description}
-              endContent={(
-                <HStack gap={2} vAlign="center">
-                  {card.isLoggedIn && (
-                    <span className="settingsStatus" aria-hidden="true">
-                      <Check size={ICON_SIZE.chrome} />
-                      <span>{providerCopy.oauthSection.signedIn}</span>
-                    </span>
-                  )}
-                  <ChevronRight size={ICON_SIZE.chrome} aria-hidden="true" />
-                </HStack>
+        <>
+          {(oauthCards.length > 0 || cloudProviders.length > 0) && (
+            <VStack gap={2}>
+              {splitsGroups && (
+                <Text type="label" size="sm" color="secondary">{copy.cloudSection}</Text>
               )}
-              onClick={() => props.onPick({
-                method: 'account',
-                cardId: card.id,
-                providerType: card.providerType,
-                name: card.name,
-              })}
-            />
-          ))}
-          {providers.map((type) => {
-            const display = providerDisplay(type, locale);
-            return (
-              <ListItem
-                key={type}
-                className="providerCatalogRow"
-                data-provider={type}
-                data-status="ready"
-                startContent={<ProviderLogo type={type} />}
-                label={/* a11y-allow: this label names the ROW, not the span. Astryx's Item puts consumer props on its outer wrapper and renders a separate invisible <button> for the click target, so an aria-label on the Item never reaches that button — measured. The button is named from its content, and this span is how the status reaches that name. Removing it drops the runtime error from the row's accessible name (settings.spec:226).*/ <span aria-label={catalogCopy.cardAria(display.name, display.description)}>{display.name}</span>}
-                description={display.description}
-                endContent={<ChevronRight size={ICON_SIZE.chrome} aria-hidden="true" />}
-                onClick={() => props.onPick({ method: 'credentials', providerType: type, name: display.name })}
-              />
-            );
-          })}
-        </List>
+              <List hasDividers>
+                {oauthCards.map((card) => (
+                  <ListItem
+                    key={card.id}
+                    className="providerCatalogRow"
+                    data-card-id={card.id}
+                    data-provider={card.providerType}
+                    data-status="ready"
+                    data-logged-in={card.isLoggedIn ? 'true' : undefined}
+                    startContent={<ProviderLogo type={card.providerType} />}
+                    label={/* a11y-allow: this label names the ROW, not the span. Astryx's Item puts consumer props on its outer wrapper and renders a separate invisible <button> for the click target, so an aria-label on the Item never reaches that button — measured. The button is named from its content, and this span is how the status reaches that name. Removing it drops the runtime error from the row's accessible name (settings.spec:226).*/ <span aria-label={providerCopy.oauthSection.cardAria(card.name, card.status, card.description)}>{card.name}</span>}
+                    description={card.description}
+                    endContent={(
+                      <HStack gap={2} vAlign="center">
+                        {card.isLoggedIn && (
+                          <span className="settingsStatus" aria-hidden="true">
+                            <Check size={ICON_SIZE.chrome} />
+                            <span>{providerCopy.oauthSection.signedIn}</span>
+                          </span>
+                        )}
+                        <ChevronRight size={ICON_SIZE.chrome} aria-hidden="true" />
+                      </HStack>
+                    )}
+                    onClick={() => props.onPick({
+                      method: 'account',
+                      cardId: card.id,
+                      providerType: card.providerType,
+                      name: card.name,
+                    })}
+                  />
+                ))}
+                {cloudProviders.map((type) => (
+                  <CatalogProviderRow key={type} type={type} onPick={props.onPick} />
+                ))}
+              </List>
+            </VStack>
+          )}
+          {localProviders.length > 0 && (
+            <VStack gap={2}>
+              {splitsGroups && (
+                <Text type="label" size="sm" color="secondary">{copy.localSection}</Text>
+              )}
+              <List hasDividers>
+                {localProviders.map((type) => (
+                  <CatalogProviderRow key={type} type={type} onPick={props.onPick} />
+                ))}
+              </List>
+            </VStack>
+          )}
+        </>
       )}
     </VStack>
+  );
+}
+
+/**
+ * One keyed provider row, shared by the cloud list and the local list — the
+ * section split is visual only, the row itself is identical in both.
+ */
+function CatalogProviderRow(props: {
+  type: ProviderType;
+  onPick(target: SetupTarget): void;
+}) {
+  const locale = useUiLocale();
+  const catalogCopy = getProviderSettingsCopy(locale).catalog;
+  const display = providerDisplay(props.type, locale);
+  return (
+    <ListItem
+      className="providerCatalogRow"
+      data-provider={props.type}
+      data-status="ready"
+      startContent={<ProviderLogo type={props.type} />}
+      label={/* a11y-allow: this label names the ROW, not the span. Astryx's Item puts consumer props on its outer wrapper and renders a separate invisible <button> for the click target, so an aria-label on the Item never reaches that button — measured. The button is named from its content, and this span is how the status reaches that name. Removing it drops the runtime error from the row's accessible name (settings.spec:226).*/ <span aria-label={catalogCopy.cardAria(display.name, display.description)}>{display.name}</span>}
+      description={display.description}
+      endContent={<ChevronRight size={ICON_SIZE.chrome} aria-hidden="true" />}
+      onClick={() => props.onPick({ method: 'credentials', providerType: props.type, name: display.name })}
+    />
   );
 }
 

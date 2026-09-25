@@ -227,6 +227,97 @@
   white-space: nowrap;
 }
 
+/* Catalog cards (MCP marketplace / Skills market & builtin): the browse
+   surface of both pages is a responsive card grid — one card per offering,
+   click anywhere on it to install. Shared here so the two pages cannot
+   drift into two card languages, the same contract as
+   .vera-module-market-icon above. */
+.vera-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.vera-catalog-section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.vera-catalog-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2-5);
+  height: 100%;
+  min-width: 0;
+}
+
+.vera-catalog-card-body {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  flex: 1;
+  min-width: 0;
+}
+
+.vera-catalog-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  font: var(--vera-text-heading-5);
+  color: var(--foreground);
+}
+
+.vera-catalog-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Installed badge and in-flight spinner are the card's only interior
+   furniture; ClickableCard's hidden <button> owns the interaction, so these
+   stay decorative. */
+.vera-catalog-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  flex-shrink: 0;
+  font: var(--vera-text-supporting);
+  color: var(--success);
+}
+
+.vera-catalog-card-spinner {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  animation: vera-spin 1s linear infinite;
+}
+
+.vera-catalog-card-desc {
+  font: var(--vera-text-supporting);
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.vera-catalog-card-meta {
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--vera-text-heading-5);
+  color: var(--foreground-secondary);
+  border-radius: var(--radius-pill);
+  background: oklch(from var(--foreground) l c h / 0.05);
+  padding: var(--space-0-5) var(--space-2);
+}
+
 /* Module-list loading skeleton (DESIGN.md §10): rows in the ready rows' own
    geometry — 28px tile column + title/secondary lines, 36px row height — so
    the load → ready switch causes zero layout shift. Shared by both module

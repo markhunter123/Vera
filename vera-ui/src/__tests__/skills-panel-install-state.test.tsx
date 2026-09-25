@@ -44,17 +44,16 @@ function renderBundledSkill(installed: boolean): string {
   );
 }
 
-test('an available bundled skill renders the install action', () => {
+test('an available bundled skill renders the install action on its card', () => {
   const markup = renderBundledSkill(false);
   assert.match(markup, /aria-label="Install Computer Use"/);
-  assert.match(markup, /lucide-download/);
-  assert.doesNotMatch(markup, /vera-skill-install-complete-icon/);
+  assert.match(markup, /vera-catalog-card/);
+  assert.doesNotMatch(markup, /vera-catalog-card-badge/);
 });
 
-test('an installed bundled skill replaces the download action with a completion check', () => {
+test('an installed bundled skill card carries the completion badge instead', () => {
   const markup = renderBundledSkill(true);
   assert.match(markup, /aria-label="Computer Use is installed in this workspace"/);
-  assert.match(markup, /vera-skill-install-complete-icon/);
+  assert.match(markup, /vera-catalog-card-badge/);
   assert.match(markup, /lucide-check/);
-  assert.doesNotMatch(markup, /lucide-download/);
 });
