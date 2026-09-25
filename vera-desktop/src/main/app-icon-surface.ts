@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { app, BrowserWindow, nativeImage } from 'electron';
+import { app, BrowserWindow, nativeImage, shell } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -80,6 +80,7 @@ export function currentAssetRoot(): string {
 
 /** Edge length of the picker thumbnails handed to the renderer. */
 const PREVIEW_SIZE = 128;
+export const WINDOWS_DEV_APP_USER_MODEL_ID = 'com.vera.Vera.Dev';
 
 export interface AppIconPreview {
   readonly id: AppIconChoice;
@@ -106,30 +107,51 @@ export function preferredWindowsIconPath(): string | undefined {
 }
 
 /**
- * Point the OS at one of the shipped icons.
+ * Point every open window at `image`.
  *
  * macOS draws one tile for the whole app, so the dock owns the icon there and
  * per-window icons are ignored. Windows and Linux draw it per window instead,
  * which is why every open window is updated: the `icon` option in
  * `createWindow` only covers windows opened *after* the choice was persisted.
- */
-/**
- * Point every open window at `image`, and on Windows force the taskbar to
- * re-read the icon. Windows can keep a stale taskbar button icon after
- * `setIcon`; removing and re-adding the taskbar button is the reliable way
- * to make the shell re-query the window icon. The toggle runs one tick
- * later so the icon write above has already been committed.
+ *
+ * Do not toggle `setSkipTaskbar` here. On Windows that changes the native
+ * window styles and can leave the existing taskbar button without an icon (or
+ * remove the button altogether) while the shell rebuilds it. `setIcon` is
+ * sufficient for the taskbar to pick up the new image and preserves the
+ * window's identity and grouping.
  */
 function setWindowIcons(image: Electron.NativeImage): void {
   const windows = BrowserWindow.getAllWindows();
   for (const window of windows) window.setIcon(image);
-  if (process.platform !== 'win32' || windows.length === 0) return;
-  for (const window of windows) window.setSkipTaskbar(true);
-  setTimeout(() => {
-    for (const window of windows) {
-      if (!window.isDestroyed()) window.setSkipTaskbar(false);
-    }
-  }, 60);
+}
+
+/**
+ * An unpackaged Windows build is launched by electron.exe, so the taskbar
+ * also consults the shortcut that launched it. Keep the repository's optional
+ * desktop Vera.lnk aligned with the running dev build when it is present.
+ * Packaged builds own their executable icon and never touch a user shortcut.
+ */
+function updateWindowsDevelopmentShortcut(iconPath: string): void {
+  if (process.platform !== 'win32' || app.isPackaged) return;
+  try {
+    const shortcutPath = join(app.getPath('desktop'), 'Vera.lnk');
+    const current = shell.readShortcutLink(shortcutPath);
+    const target = current.target.toLowerCase();
+    const args = (current.args ?? '').toLowerCase();
+    if (!target.endsWith('wscript.exe') || !args.includes('vera.vbs')) return;
+    shell.writeShortcutLink(shortcutPath, 'update', {
+      target: current.target,
+      args: current.args,
+      cwd: current.cwd,
+      description: current.description,
+      icon: iconPath,
+      iconIndex: 0,
+      appUserModelId: WINDOWS_DEV_APP_USER_MODEL_ID,
+    });
+  } catch {
+    // The shortcut is optional; failure must never prevent the desktop app
+    // from starting or applying its window icon.
+  }
 }
 
 export function applyAppIcon(value: unknown, onIconError: (error: unknown) => void): void {
@@ -139,6 +161,7 @@ export function applyAppIcon(value: unknown, onIconError: (error: unknown) => vo
       const preferredIco = preferredWindowsIconPath();
       if (preferredIco) {
         const image = nativeImage.createFromPath(preferredIco);
+        updateWindowsDevelopmentShortcut(preferredIco);
         setWindowIcons(image);
         return;
       }
@@ -148,6 +171,7 @@ export function applyAppIcon(value: unknown, onIconError: (error: unknown) => vo
       onIconError(new Error(`no readable artwork for app icon "${icon}"`));
       return;
     }
+    updateWindowsDevelopmentShortcut(readableAppIconPath(icon));
     if (app.dock) {
       app.dock.setIcon(image);
       return;

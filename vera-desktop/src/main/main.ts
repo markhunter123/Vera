@@ -43,6 +43,7 @@ import { showFatalStartupError } from './native-diagnostic-dialog.js';
 import { isIsolatedE2e } from './startup-context.js';
 import { reportDevelopmentLaunchResult } from './dev-single-instance-result.js';
 import { registerPreviousMainProcessDiagnosticsIpc } from './desktop-diagnostics-ipc-main.js';
+import { WINDOWS_DEV_APP_USER_MODEL_ID } from './app-icon-surface.js';
 
 let recoveryJournal: MainProcessRecoveryJournal | undefined;
 installMainProcessLogCapture(mainProcessLogBuffer, () => recoveryJournal?.markDirty());
@@ -115,7 +116,7 @@ if (!app.requestSingleInstanceLock()) {
   // an unpackaged Electron default (the bare exe path) makes the shell keep
   // stale window icons. Pin a stable id so setIcon updates read cleanly.
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.vera.Vera');
+    app.setAppUserModelId(app.isPackaged ? 'com.vera.Vera' : WINDOWS_DEV_APP_USER_MODEL_ID);
   }
   const buildInfo = resolveBuildInfo(app.isPackaged, app.getAppPath());
   try {
