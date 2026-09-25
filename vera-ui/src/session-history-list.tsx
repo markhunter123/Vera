@@ -60,7 +60,7 @@ import { useUiLocale } from './locale-context.js';
 import { getConversationCopy } from './conversation-copy.js';
 
 type SessionRowActionId = 'flag' | 'archive' | 'rename' | 'delete';
-type ProjectRowActionId = 'new' | 'relink' | 'rename' | 'archive' | 'restore';
+type ProjectRowActionId = 'new' | 'relink' | 'rename' | 'archive' | 'remove' | 'restore';
 type SessionHistoryGroupVariant = 'conversation' | 'project';
 
 export interface SessionRowActions {
@@ -77,6 +77,8 @@ export interface ProjectRowActions {
   onArchive(projectId: string): void | Promise<void>;
   onRestore(projectId: string): void | Promise<void>;
   onRelink?(projectId: string): void | Promise<void>;
+  /** Confirmed in the host layer before this fires; optional for older hosts. */
+  onRemove?(projectId: string): void | Promise<void>;
 }
 
 export interface SessionHistoryGroup {
@@ -98,6 +100,8 @@ export function SessionHistoryList(props: {
   groupVariant?: SessionHistoryGroupVariant;
   onSelectSession(sessionId: string): void;
   rowActions?: SessionRowActions;
+  /** Persists the ungrouped group's custom heading; absent until the host opts in. */
+  onRenameUngrouped?(name: string): void | Promise<void>;
 }) {
   const locale = useUiLocale();
 
@@ -148,6 +152,7 @@ export function SessionHistoryList(props: {
         onSelectSession={props.onSelectSession}
         rowActions={props.rowActions}
         projectActions={props.projectActions}
+        onRenameUngrouped={props.onRenameUngrouped}
       />
     </div>
   );
@@ -169,6 +174,7 @@ function SessionListGroups(props: {
   onSelectSession(sessionId: string): void;
   rowActions?: SessionRowActions;
   projectActions?: ProjectRowActions;
+  onRenameUngrouped?(name: string): void | Promise<void>;
 }) {
   const copy = getConversationCopy(useUiLocale()).sessions;
   const [renameTarget, setRenameTarget] = useState<SessionRenameTarget | null>(null);
@@ -207,6 +213,12 @@ function SessionListGroups(props: {
   }
 
   function commitRename(target: SessionRenameTarget, name: string) {
+    if (target.kind === 'ungrouped') {
+      void Promise.resolve(props.onRenameUngrouped?.(name)).catch(() => {
+        // AppShell owns visible rename failure feedback.
+      });
+      return;
+    }
     const rename =
       target.kind === 'project' ? props.projectActions?.onRename : props.rowActions?.onRename;
     if (!rename) return;
@@ -278,6 +290,13 @@ function SessionListGroups(props: {
               startRename({ kind: 'project', id: project.id, name: project.name }, opener);
             }
           }}
+          onStartUngroupedRename={
+            project || props.onRenameUngrouped
+              ? (opener) => {
+                  startRename({ kind: 'ungrouped', id: group.key, name: group.label }, opener);
+                }
+              : undefined
+          }
           renderSession={renderSessionRow}
         />
       );
@@ -334,12 +353,19 @@ function ProjectNavRow(props: {
   sessions: SessionSummary[];
   projectActions?: ProjectRowActions;
   onStartRename(opener: HTMLElement | null): void;
+  onStartUngroupedRename?(opener: HTMLElement | null): void;
   renderSession(session: SessionSummary): ReactNode;
 }) {
   // Collapsible only when there is a real session subtree. An empty VStack is
   // still truthy children for Astryx (!!children) and fabricates a disclosure.
   const hasSessions = props.sessions.length > 0;
   const hasActions = props.project !== undefined && props.projectActions !== undefined;
+  const hasUngroupedActions =
+    props.project === undefined && props.onStartUngroupedRename !== undefined;
+  // The ungrouped group gets the same fixed trailing column and the same
+  // inset as a project row: without them its menu both steals width on hover
+  // and lands on top of the disclosure when the group has tasks.
+  const actionPosition = hasSessions ? 'before-disclosure' : 'trailing';
   return (
     <div data-project-id={props.groupKey} className="vera-project-row">
       <SideNavItem
@@ -351,7 +377,7 @@ function ProjectNavRow(props: {
           <ProjectItemMeta
             project={props.project}
             sessionCount={props.sessions.length}
-            reserveAction={hasActions}
+            reserveAction={hasActions || hasUngroupedActions}
           />
         }
         trailingAction={
@@ -360,9 +386,16 @@ function ProjectNavRow(props: {
               project={props.project}
               actions={props.projectActions}
               onStartRename={props.onStartRename}
-              position={hasSessions ? 'before-disclosure' : 'trailing'}
+              position={actionPosition}
             />
-          ) : undefined
+          ) : (
+            hasUngroupedActions && (
+              <UngroupedGroupActions
+                onStartRename={props.onStartUngroupedRename!}
+                position={actionPosition}
+              />
+            )
+          )
         }
       >
         {/* sidebar.css keeps an 8px nest so session titles share the project x. */}
@@ -371,6 +404,49 @@ function ProjectNavRow(props: {
         ) : undefined}
       </SideNavItem>
     </div>
+  );
+}
+
+/** The ungrouped group has no project record behind it; its only action is
+ *  renaming the heading the host persists. */
+function UngroupedGroupActions(props: {
+  onStartRename(opener: HTMLElement | null): void;
+  position: 'before-disclosure' | 'trailing';
+}) {
+  const trailingRef = useRef<HTMLSpanElement>(null);
+  const locale = useUiLocale();
+  const copy = getConversationCopy(locale).sessions;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pendingMenuIntentRef = useRef<(() => void) | null>(null);
+  return (
+    <span
+      className="vera-session-row-action"
+      data-position={props.position}
+      ref={trailingRef}
+    >
+      <MoreMenu
+        size="sm"
+        label={copy.projectActionsAriaLabel(copy.ungroupedGroup)}
+        isMenuOpen={menuOpen}
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          if (open) return;
+          const intent = pendingMenuIntentRef.current;
+          pendingMenuIntentRef.current = null;
+          if (intent) window.requestAnimationFrame(intent);
+        }}
+        items={[
+          {
+            label: copy.rename,
+            icon: Pencil,
+            onClick: () => {
+              const opener = trailingRef.current?.querySelector<HTMLElement>('button') ?? null;
+              pendingMenuIntentRef.current = () => props.onStartRename(opener);
+            },
+          },
+        ]}
+      />
+    </span>
   );
 }
 
@@ -592,6 +668,17 @@ function ProjectItemActions(props: {
           icon: Archive,
           onClick: () => runProjectAction('archive', () => actions.onArchive(project.id)),
         },
+        ...(actions.onRemove
+          ? [
+              { type: 'divider' as const },
+              {
+                label: copy.projectRemove,
+                icon: Trash2,
+                variant: 'destructive' as const,
+                onClick: () => runProjectAction('remove', () => actions.onRemove!(project.id)),
+              },
+            ]
+          : []),
       ];
 
   return (

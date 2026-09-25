@@ -117,6 +117,7 @@ export function SessionNavigationHost(props: SessionNavigationHostProps) {
       workHubEntry={props.workHubEntry}
       rowActions={rowActions}
       projectActions={props.projectActions}
+      onRenameUngrouped={controller.commands.renameUngroupedGroup}
     />
   );
 }

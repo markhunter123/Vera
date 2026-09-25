@@ -33,7 +33,10 @@ import type { SessionSummary } from '@vera/core/session';
 import { runtimeHostProfileUsesHostWorkspace } from '@vera/runtime-host/profile-kind';
 import type { SideNavImperativeCollapseHandle } from '@astryxdesign/core/SideNav';
 import { useUiLocale, type SessionHistoryGroup, type SessionViewMode } from '@vera/ui';
-import { safeLocalStorageSet } from '../../../browser-storage.js';
+import {
+  safeLocalStorageGet,
+  safeLocalStorageSet,
+} from '../../../browser-storage.js';
 import { useStableActions } from '../../../use-stable-actions.js';
 import type { BranchBanner } from '../model/branch-banner.js';
 import { deriveBranchBanner } from '../model/branch-banner.js';
@@ -124,6 +127,7 @@ export interface SessionNavigationSelectors {
 
 export interface SessionNavigationCommands extends SessionNavigationRowActions {
   openSession(sessionId: string, turnId?: string, sequence?: number): void;
+  renameUngroupedGroup(name: string): void;
 }
 
 export interface SessionNavigationController {
@@ -172,6 +176,17 @@ export function useSessionNavigationController(
     writeSessionListViewMode(viewMode);
   }, [viewMode]);
 
+  // The ungrouped group's heading is a pure display preference — it names no
+  // stored record — so localStorage is the whole persistence story.
+  const [ungroupedLabel, setUngroupedLabel] = useState(
+    () => safeLocalStorageGet('vera-ungrouped-group-label-v1') ?? '',
+  );
+  const renameUngroupedGroup = useCallback((name: string): void => {
+    const trimmed = name.trim();
+    safeLocalStorageSet('vera-ungrouped-group-label-v1', trimmed);
+    setUngroupedLabel(trimmed);
+  }, []);
+
   const rowActions = useStableActions(createSessionNavigationRowActions, {
     uiLocale: locale,
     activeIdRef,
@@ -212,8 +227,9 @@ export function useSessionNavigationController(
     [input.activeSessionId, input.hiddenSessionIds, input.sessions],
   );
   const groups = useMemo(
-    () => deriveSessionNavigationGroups(rail.sessions, input.projects, locale),
-    [locale, input.projects, rail.sessions],
+    () =>
+      deriveSessionNavigationGroups(rail.sessions, input.projects, locale, ungroupedLabel),
+    [locale, input.projects, rail.sessions, ungroupedLabel],
   );
   const worktreeSessionIds = useMemo(
     () =>
@@ -279,8 +295,9 @@ export function useSessionNavigationController(
     () => ({
       ...rowActions,
       openSession,
+      renameUngroupedGroup,
     }),
-    [openSession, rowActions],
+    [openSession, renameUngroupedGroup, rowActions],
   );
 
   return useMemo(

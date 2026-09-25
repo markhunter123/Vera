@@ -134,6 +134,17 @@ export interface DesktopConversationCopy {
     retry: string;
     loadFailed: string;
     actionFailed: string;
+    stateTodo: string;
+    stateInProgress: string;
+    stateDone: string;
+    start: string;
+    sendBack: string;
+    notes: string;
+    notesPlaceholder: string;
+    agentTag: string;
+    archivedGroup(count: number): string;
+    moreActions: string;
+    cancel: string;
     complete: string;
     reopen: string;
     rename: string;
@@ -487,6 +498,17 @@ const COPY = {
       retry: '重试',
       loadFailed: '工作看板加载失败',
       actionFailed: '操作失败',
+      stateTodo: '待办',
+      stateInProgress: '进行中',
+      stateDone: '已完成',
+      start: '开始',
+      sendBack: '放回待办',
+      notes: '备注',
+      notesPlaceholder: '添加备注…',
+      agentTag: 'agent 建议',
+      archivedGroup: (count) => `已归档（${count}）`,
+      moreActions: '更多操作',
+      cancel: '取消',
       complete: '完成',
       reopen: '重开',
       rename: '改名',
@@ -712,6 +734,17 @@ const COPY = {
       retry: 'Retry',
       loadFailed: 'Failed to load work board',
       actionFailed: 'Action failed',
+      stateTodo: 'To do',
+      stateInProgress: 'In progress',
+      stateDone: 'Done',
+      start: 'Start',
+      sendBack: 'Back to to-do',
+      notes: 'Notes',
+      notesPlaceholder: 'Add notes…',
+      agentTag: 'agent suggestion',
+      archivedGroup: (count) => `Archived (${count})`,
+      moreActions: 'More actions',
+      cancel: 'Cancel',
       complete: 'Complete',
       reopen: 'Reopen',
       rename: 'Rename',

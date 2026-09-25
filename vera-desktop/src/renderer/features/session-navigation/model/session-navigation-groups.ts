@@ -29,6 +29,8 @@ export function deriveSessionNavigationGroups(
   sessions: readonly SessionNavigationSession[],
   projects: readonly ProjectRecord[],
   locale: UiLocale,
+  /** Custom heading for the ungrouped group; empty falls back to the copy. */
+  ungroupedLabel?: string,
 ): SessionHistoryGroup[] {
   const local: SessionNavigationSession[] = [];
   const hosts = new Map<
@@ -48,7 +50,7 @@ export function deriveSessionNavigationGroups(
     hosts.set(session.profileId, group);
   }
   return [
-    ...deriveProjectGroups(local, projects, locale),
+    ...deriveProjectGroups(local, projects, locale, ungroupedLabel),
     ...[...hosts].map(([id, group]) => ({
       id: `runtime-host:${id}`,
       label: group.label,

@@ -24,9 +24,10 @@ import { Layout, LayoutContent, LayoutFooter } from '@astryxdesign/core/Layout';
 import { getConversationCopy } from './conversation-copy.js';
 import { useUiLocale } from './locale-context.js';
 
-/** What the sidebar is renaming: one row's session, or a project group's own name. */
+/** What the sidebar is renaming: one row's session, a project group's own name,
+ *  or the ungrouped group's custom heading. */
 export interface SessionRenameTarget {
-  kind: 'session' | 'project';
+  kind: 'session' | 'project' | 'ungrouped';
   id: string;
   name: string;
 }
@@ -66,7 +67,11 @@ export function SessionRenameDialog(props: {
   const trimmed = name.trim();
   // The row's own vocabulary: a session is 任务 everywhere the user can see
   // one, and the header doubles as the field's (hidden) label.
-  const title = target.kind === 'project' ? copy.renameProjectTitle : copy.renameAriaLabel;
+  const title = target.kind === 'project'
+    ? copy.renameProjectTitle
+    : target.kind === 'ungrouped'
+      ? copy.renameUngroupedTitle
+      : copy.renameAriaLabel;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

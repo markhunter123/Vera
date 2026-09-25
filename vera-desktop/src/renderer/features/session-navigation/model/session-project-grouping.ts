@@ -29,6 +29,8 @@ export function deriveProjectGroups(
   sessions: ReadonlyArray<SessionSummary>,
   projects: ReadonlyArray<ProjectRecord>,
   locale: UiLocale = 'zh',
+  /** Custom heading for the ungrouped group; empty falls back to the copy. */
+  ungroupedLabel?: string,
 ): SessionHistoryGroup[] {
   const sessionsByProject = new Map<string, SessionSummary[]>();
   const canonicalProjectIds = new Map<string, string>();
@@ -60,7 +62,7 @@ export function deriveProjectGroups(
   if (ungrouped.length > 0) {
     groups.push({
       id: UNGROUPED_KEY,
-      label: getShellRemainingCopy(locale).projects.ungrouped,
+      label: ungroupedLabel?.trim() || getShellRemainingCopy(locale).projects.ungrouped,
       sessions: ungrouped,
       project: undefined,
     });

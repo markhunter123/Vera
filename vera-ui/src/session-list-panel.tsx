@@ -67,6 +67,7 @@ export function SessionListPanel(props: {
   worktreeSessionIds?: ReadonlySet<string>;
   sessionMeta?(session: SessionSummary): string | undefined;
   projectActions?: ProjectRowActions;
+  onRenameUngrouped?(name: string): void | Promise<void>;
   viewMode?: SessionViewMode;
   onViewModeChange?: (mode: SessionViewMode) => void;
   onSelectSession(sessionId: string): void;
@@ -200,6 +201,7 @@ export function SessionListPanel(props: {
             worktreeSessionIds={props.worktreeSessionIds}
             sessionMeta={props.sessionMeta}
             projectActions={props.projectActions}
+            onRenameUngrouped={props.onRenameUngrouped}
             onSelectSession={props.onSelectSession}
             rowActions={props.rowActions}
           />
