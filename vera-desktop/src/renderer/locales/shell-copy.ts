@@ -1135,6 +1135,10 @@ const SHELL_COPY_BY_LOCALE = {
             { keys: ['Enter'], description: '发送消息' },
             { keys: ['Shift', 'Enter'], description: '插入换行' },
             { keys: ['Alt', 'Enter'], description: '插入换行（备用）' },
+            {
+              keys: ['右 Alt'],
+              description: '按住说话，松开识别到输入框（需开启语音识别）',
+            },
           ],
         },
         {
@@ -1669,6 +1673,10 @@ const SHELL_COPY_BY_LOCALE = {
             {
               keys: ['Alt', 'Enter'],
               description: 'Insert a line break (alternative)',
+            },
+            {
+              keys: ['Right Alt'],
+              description: 'Hold to talk, release to transcribe into the composer (with voice input enabled)',
             },
           ],
         },

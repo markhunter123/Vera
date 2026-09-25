@@ -84,6 +84,7 @@ import { useAppShellSessionUiReads } from './use-app-shell-session-ui-reads';
 import { AgentGraphPanel } from './agent-graph-panel';
 import { ChatComposerRegion } from './chat-composer-region';
 import { useVoiceInput } from './voice/use-voice-input';
+import { useVoicePushToTalk } from './voice/use-voice-push-to-talk';
 import { getVoiceInputCopy } from './voice/voice-copy';
 import { usePromptOptimizer, getPromptOptimizeCopy } from './use-prompt-optimize';
 import {
@@ -809,6 +810,13 @@ function AppShellContent({
           : {}),
       });
     },
+  });
+  // Hold the right Alt key to talk: the mic button's keyboard twin, gated by
+  // the same settings switch.
+  useVoicePushToTalk({
+    enabled: voiceInputEnabled,
+    state: voiceInput.state,
+    toggle: voiceInput.toggle,
   });
   // Prompt optimize (优化提示词): rewrite the composer draft in place via
   // the host's default provider. No settings gate — an empty draft or a
