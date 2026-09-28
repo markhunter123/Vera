@@ -71,7 +71,7 @@ jobs:
         working-directory: native/runtime-host-peer
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Install cargo-deny
-        uses: taiki-e/install-action@fcf5432d9f50d67e37ee6e29bdb7a224ff67b4a7 # v2
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: cargo-deny@0.20.2
       - name: Check Cargo dependency inventory
