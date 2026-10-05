@@ -20,7 +20,7 @@
     "test:dist": "node --test \"dist/**/*.test.js\""
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.4.0",
+    "@agentclientprotocol/sdk": "1.6.0",
     "@earendil-works/pi-tui": "0.84.2",
     "@vera/core": "1.0.0",
     "@vera/eval": "1.0.0",
