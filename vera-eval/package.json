@@ -40,6 +40,6 @@
   "dependencies": {
     "@vera/core": "1.0.0",
     "@vera/runtime-host": "1.0.0",
-    "undici": "^8.7.0"
+    "undici": "^8.12.3"
   }
 }
